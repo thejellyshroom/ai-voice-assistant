@@ -17,7 +17,7 @@ class AudioHandler:
         self.format = pyaudio.paInt16
         self.pyaudio = pyaudio.PyAudio()
         self.recognizer = sr.Recognizer()
-        self.recognizer.pause_threshold = 1.0  # Seconds of silence before considering the phrase complete (increased from 1.5)
+        self.recognizer.pause_threshold = 1.0  # Seconds of silence before considering the phrase complete
         self.recognizer.phrase_threshold = 0.3  # Minimum seconds of speaking audio before we consider the phrase started
         self.recognizer.non_speaking_duration = 0.5  # Seconds of non-speaking audio to keep on both sides of the recording
         self.recognizer.energy_threshold = 20  # Minimum audio energy to consider for recording (lowered based on observed values)

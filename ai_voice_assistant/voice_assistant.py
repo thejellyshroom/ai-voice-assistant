@@ -12,20 +12,54 @@ import queue
 
 
 class VoiceAssistant:
-    def __init__(self, tts_model="hexgrad/Kokoro-82M", tts_voice="af_heart", speech_speed=1.3, transcription_model="h2oai/faster-whisper-large-v3-turbo"):
+    def __init__(self, 
+                 # TTS parameters
+                 tts_model="hexgrad/Kokoro-82M", 
+                 tts_voice="af_heart", 
+                 speech_speed=1.3,
+                 expressiveness=1.0,
+                 variability=0.2,
+                 # ASR parameters 
+                 transcription_model="h2oai/faster-whisper-large-v3-turbo",
+                 # LLM parameters
+                 temperature=0.7,
+                 top_p=0.9,
+                 top_k=40,
+                 creativity="high"):
         """Initialize the voice assistant with all components.
         
         Args:
+            # TTS parameters
             tts_model (str): The TTS model to use (default: "hexgrad/Kokoro-82M")
-            tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart" - American female Nova)
+            tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart")
             speech_speed (float): Speed factor for speech (default: 1.3, range: 0.5-2.0)
-            transcription_model (str): The transcription model to use (default: "h2oai/faster-whisper-large-v3-turbo")
+            expressiveness (float): Voice expressiveness (default: 1.0, range: 0.0-2.0)
+            variability (float): Speech variability (default: 0.2, range: 0.0-1.0)
+            
+            # ASR parameters
+            transcription_model (str): The transcription model to use
+            
+            # LLM parameters
+            temperature (float): LLM temperature (default: 0.7, range: 0.0-2.0)
+            top_p (float): LLM top-p sampling (default: 0.9, range: 0.0-1.0)
+            top_k (int): LLM top-k sampling (default: 40)
+            creativity (str): LLM creativity preset (default: None, choices: low, medium, high, random)
         """
-        # Store configuration parameters
+        # Store TTS configuration parameters
         self.tts_model = tts_model
         self.tts_voice = tts_voice
         self.speech_speed = speech_speed
+        self.expressiveness = expressiveness
+        self.variability = variability
+        
+        # Store ASR configuration parameters
         self.transcription_model = transcription_model
+        
+        # Store LLM configuration parameters
+        self.temperature = temperature
+        self.top_p = top_p
+        self.top_k = top_k
+        self.creativity = creativity
         
         # Components will be initialized on demand
         self.audio_handler = None
@@ -106,28 +140,44 @@ class VoiceAssistant:
             print(f"Error initializing transcriber: {str(e)}")
     
     def load_llm_handler(self):
-        """Load the LLM component."""
-        self._unload_component("llm_handler")
-        try:
-            self.llm_handler = LLMHandler()
-            print("LLM handler initialized successfully.")
-        except Exception as e:
-            print(f"Error initializing LLM handler: {str(e)}")
-    
+        """Load the LLM handler."""
+        print("Loading LLM handler...")
+        if self.llm_handler is None:
+            llm_params = {
+                'temperature': self.temperature,
+                'top_p': self.top_p,
+                'top_k': self.top_k
+            }
+            
+            # Add creativity preset if specified
+            if self.creativity:
+                llm_params['creativity'] = self.creativity
+                
+            self.llm_handler = LLMHandler(**llm_params)
+        
     def load_tts_handler(self):
-        """Load the TTS component."""
+        """Load the TTS handler."""
+        print("Loading TTS handler...")
         self._unload_component("tts_handler")
+        
         try:
+            print(f"Initializing TTS with model={self.tts_model}, voice={self.tts_voice}, speed={self.speech_speed}")
             self.tts_handler = TTSHandler(
-                model_id=self.tts_model, 
-                voice=self.tts_voice, 
-                speech_speed=self.speech_speed,
+                model_id=self.tts_model,
+                voice=self.tts_voice,
+                speech_speed=self.speech_speed
             )
+            
+            # Set voice characteristics
+            self.tts_handler.set_characteristics(
+                expressiveness=self.expressiveness,
+                variability=self.variability,
+            )
+            
             self.tts_enabled = True
-            print("TTS handler initialized successfully.")
+            print("TTS handler loaded successfully.")
         except Exception as e:
-            print(f"Error initializing TTS: {str(e)}")
-            print("Voice output will be disabled.")
+            print(f"Error loading TTS handler: {e}")
             self.tts_enabled = False
         
     def listen(self, duration=None, timeout=None):

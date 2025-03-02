@@ -15,6 +15,9 @@ TRANSCRIPTION_MODELS = {
     "transformers-whisper": "openai/whisper-large-v3-turbo"
 }
 
+# Define LLM creativity presets
+LLM_CREATIVITY_PRESETS = ["low", "medium", "high", "random"]
+
 def list_available_voices():
     """Print a formatted list of available voices."""
     print("\nAvailable Kokoro voices:")
@@ -29,6 +32,14 @@ def list_available_transcription_models():
     print("\nAvailable transcription models:")
     for name, model_id in TRANSCRIPTION_MODELS.items():
         print(f"  - {name}: {model_id}")
+    print()
+
+
+def list_llm_creativity_presets():
+    """Print a formatted list of available LLM creativity presets."""
+    print("\nAvailable LLM creativity presets:")
+    for preset in LLM_CREATIVITY_PRESETS:
+        print(f"  - {preset}")
     print()
 
 def load_config(config_file):
@@ -54,13 +65,31 @@ def main():
     parser.add_argument('--timeout', type=int, default=10, help='Maximum seconds to wait for speech before giving up')
     parser.add_argument('--phrase-limit', type=int, default=60, help='Maximum seconds for a single phrase')
 
+    # TTS parameters
     parser.add_argument('--tts-model', type=str, default="hexgrad/Kokoro-82M", 
                         help='TTS model to use (default: hexgrad/Kokoro-82M)')
     parser.add_argument('--tts-voice', type=str, default="af_heart", 
                         help='Voice to use for Kokoro TTS (default: af_heart)')
     parser.add_argument('--speech-speed', type=float, default=1.3, 
                         help='Speed factor for speech (default: 1.3, range: 0.5-2.0)')
+    parser.add_argument('--expressiveness', type=float, default=1.0,
+                        help='Voice expressiveness (default: 1.0, range: 0.0-2.0)')
+    parser.add_argument('--variability', type=float, default=0.3,
+                        help='Speech variability (default: 0.3, range: 0.0-1.0)')
+                        
+    # LLM parameters
+    parser.add_argument('--temperature', type=float, default=0.7,
+                        help='LLM temperature (default: 0.7, range: 0.0-2.0)')
+    parser.add_argument('--top-p', type=float, default=0.9,
+                        help='LLM top-p sampling (default: 0.9, range: 0.0-1.0)')
+    parser.add_argument('--top-k', type=int, default=40,
+                        help='LLM top-k sampling (default: 40)')
+    parser.add_argument('--creativity', type=str, default="high", choices=LLM_CREATIVITY_PRESETS,
+                        help='LLM creativity preset (default: High)')
+                        
+    # List options
     parser.add_argument('--list-voices', action='store_true', help='List all available Kokoro voices and exit')
+    parser.add_argument('--list-creativity-presets', action='store_true', help='List all available LLM creativity presets and exit')
     
     # Add transcription model options
     parser.add_argument('--transcription-model', type=str, default="faster-whisper", 
@@ -91,6 +120,11 @@ def main():
     if args.list_transcription_models:
         list_available_transcription_models()
         return
+        
+    # If --list-creativity-presets is specified, print available presets and exit
+    if args.list_creativity_presets:
+        list_llm_creativity_presets()
+        return
     
     # Load configuration from files if specified
     config = {}
@@ -114,6 +148,14 @@ def main():
     tts_model = args.tts_model
     tts_voice = args.tts_voice
     speech_speed = args.speech_speed
+    expressiveness = args.expressiveness
+    variability = args.variability
+    
+    # LLM parameters
+    temperature = args.temperature
+    top_p = args.top_p
+    top_k = args.top_k
+    creativity = args.creativity
     
     # Override with config values if available
     if 'tts_model' in config:
@@ -122,6 +164,20 @@ def main():
         tts_voice = config.get('tts_voice', tts_voice)
     if 'speech_speed' in config:
         speech_speed = config.get('speech_speed', speech_speed)
+    if 'expressiveness' in config:
+        expressiveness = config.get('expressiveness', expressiveness)
+    if 'variability' in config:
+        variability = config.get('variability', variability)
+    
+    # Override LLM parameters from config if available
+    if 'temperature' in config:
+        temperature = config.get('temperature', temperature)
+    if 'top_p' in config:
+        top_p = config.get('top_p', top_p)
+    if 'top_k' in config:
+        top_k = config.get('top_k', top_k)
+    if 'creativity' in config:
+        creativity = config.get('creativity', creativity)
     
     # Check if the specified voice is valid
     all_voices = [voice for voices in KOKORO_VOICES.values() for voice in voices]
@@ -130,6 +186,13 @@ def main():
         print("Using default voice 'af_heart' instead.")
         print("Use --list-voices to see all available voices.")
         tts_voice = "af_heart"
+    
+    # Check if the specified creativity preset is valid
+    if creativity and creativity not in LLM_CREATIVITY_PRESETS:
+        print(f"Warning: '{creativity}' is not a recognized creativity preset.")
+        print("Not using any preset.")
+        print("Use --list-creativity-presets to see all available presets.")
+        creativity = None
     
     # Get the transcription model ID
     transcription_model_name = args.transcription_model
@@ -141,10 +204,19 @@ def main():
     
     # Initialize the voice assistant
     assistant = VoiceAssistant(
+        # TTS parameters
         tts_model=tts_model,
         tts_voice=tts_voice,
         speech_speed=speech_speed,
-        transcription_model=transcription_model
+        expressiveness=expressiveness,
+        variability=variability,
+        # ASR parameters
+        transcription_model=transcription_model,
+        # LLM parameters
+        temperature=temperature,
+        top_p=top_p,
+        top_k=top_k,
+        creativity=creativity
     )
     
     # Enable interruptions if requested

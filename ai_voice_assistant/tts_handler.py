@@ -6,30 +6,91 @@ from kokoro import KPipeline
 import logging
 import os
 import re
+import random
+import time
 
 
 class TTSHandler:
     def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_heart", speech_speed=1.3):
         self.model_id = model_id
         self.voice = voice
-        self.speech_speed = max(0.5, min(2.0, speech_speed))  # Clamp between 0.5 and 2.0
+        self.base_speech_speed = max(0.5, min(2.0, speech_speed))  # Clamp between 0.5 and 2.0
+        self.speech_speed = self.base_speech_speed
+        
+        # Voice characteristics
+        self.available_voices = self._get_available_voices()
+        self.speech_characteristics = {
+            "expressiveness": 1.0,  # 0.0-2.0, how expressive the voice is
+            "variability": 0.2,     # 0.0-1.0, how much the speech speed varies
+            "character": voice      # Voice character/persona
+        }
         
         print(f"Initializing Kokoro TTS with voice: {voice}")
-        print(f"Speech speed set to: {self.speech_speed}x")
+        print(f"Base speech speed set to: {self.base_speech_speed}x")
+        print(f"Speech characteristics: {self.speech_characteristics}")
         
         # Determine language code from voice prefix
         lang_code = voice[0]  # First letter of voice ID determines language
         self.kokoro_pipeline = KPipeline(lang_code=lang_code)
         
-    def synthesize(self, text):
-        """Convert text to speech.
+    def set_characteristics(self, **kwargs):
+        """Update speech characteristics.
+        
+        Args:
+            **kwargs: Characteristics to update
+                - expressiveness (float): 0.0-2.0
+                - variability (float): 0.0-1.0
+                - character (str): Voice ID
+        """
+        for key, value in kwargs.items():
+            if key in self.speech_characteristics:
+                # Validate values
+                if key == "expressiveness":
+                    value = max(0.0, min(2.0, value))
+                elif key == "variability":
+                    value = max(0.0, min(1.0, value))
+                elif key == "character" and value not in self.available_voices:
+                    print(f"Warning: Invalid voice '{value}'. Using '{self.voice}'.")
+                    value = self.voice
+                
+                # Update the characteristic
+                self.speech_characteristics[key] = value
+                
+                # Special handling for character/voice change
+                if key == "character" and value != self.voice:
+                    self.voice = value
+                    # Update language code if needed
+                    lang_code = value[0]
+                    self.kokoro_pipeline = KPipeline(lang_code=lang_code)
+        
+        print(f"Updated speech characteristics: {self.speech_characteristics}")
+        
+    def _get_available_voices(self):
+        """Get list of available Kokoro voices."""
+        # These are example voices - the actual list will depend on your Kokoro installation
+        # Each voice ID has a language prefix (a=Arabic, af=Afrikaans, e=English, etc.)
+        return [
+            "af_heart", "af_nicole", "af_spirit", "e_asif", "e_cassie", 
+            "e_emma", "e_jack", "e_jeremy", "e_josh", "e_lucy", "e_maria"
+        ]
+
+        
+    def synthesize(self, text, **kwargs):
+        """Convert text to speech with optional characteristics override.
         
         Args:
             text (str): Text to convert to speech
-            
+            **kwargs: Optional characteristic overrides for this utterance
+                - expressiveness, variability, character
+                
         Returns:
             tuple: (audio_array, sample_rate)
         """
+        # Apply any temporary characteristic overrides
+        if kwargs:
+            temp_characteristics = self.speech_characteristics.copy()
+            self.set_characteristics(**kwargs)
+        
         try:
             if not text:
                 return np.zeros(0, dtype=np.float32), 24000
@@ -79,6 +140,7 @@ class TTSHandler:
                     return np.zeros(0, dtype=np.float32), sample_rate
             else:
                 # Process short text directly
+                # Set speed for the entire text
                 audio = self._synthesize_single(text)
                 if audio is None:
                     print(f"Warning: Got None audio for text: {text}")
@@ -90,6 +152,10 @@ class TTSHandler:
             import traceback
             traceback.print_exc()
             return np.zeros(0, dtype=np.float32), 24000
+        finally:
+            # Restore original characteristics if they were temporarily overridden
+            if kwargs:
+                self.speech_characteristics = temp_characteristics
     
     def _synthesize_single(self, text):
         """Synthesize a single piece of text.
@@ -101,6 +167,8 @@ class TTSHandler:
             numpy.ndarray: Audio array
         """
         try:
+            print(f"Synthesizing with speed: {self.speech_speed:.2f}x, voice: {self.voice}")
+            
             generator = self.kokoro_pipeline(
                 text,
                 voice=self.voice,
