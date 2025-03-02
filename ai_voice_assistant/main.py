@@ -12,6 +12,7 @@ KOKORO_VOICES = {
 # Define available transcription models
 TRANSCRIPTION_MODELS = {
     "faster-whisper": "h2oai/faster-whisper-large-v3-turbo",
+    "faster-whisper-small": "Systran/faster-whisper-small",
     "transformers-whisper": "openai/whisper-large-v3-turbo"
 }
 
@@ -92,9 +93,9 @@ def main():
     parser.add_argument('--list-creativity-presets', action='store_true', help='List all available LLM creativity presets and exit')
     
     # Add transcription model options
-    parser.add_argument('--transcription-model', type=str, default="faster-whisper", 
+    parser.add_argument('--transcription-model', type=str, default="faster-whisper-small", 
                         choices=list(TRANSCRIPTION_MODELS.keys()),
-                        help='Transcription model to use (default: faster-whisper)')
+                        help='Transcription model to use (default: faster-whisper-small)')
     parser.add_argument('--list-transcription-models', action='store_true', 
                         help='List all available transcription models and exit')
     

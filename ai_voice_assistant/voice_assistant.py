@@ -20,7 +20,7 @@ class VoiceAssistant:
                  expressiveness=1.0,
                  variability=0.3,
                  # ASR parameters 
-                 transcription_model="h2oai/faster-whisper-large-v3-turbo",
+                 transcription_model="Systran/faster-whisper-small",
                  # LLM parameters
                  temperature=0.7,
                  top_p=0.9,
@@ -37,7 +37,7 @@ class VoiceAssistant:
             variability (float): Speech variability (default: 0.2, range: 0.0-1.0)
             
             # ASR parameters
-            transcription_model (str): The transcription model to use
+            transcription_model (str): The transcription model to use (default: "Systran/faster-whisper-small")
             
             # LLM parameters
             temperature (float): LLM temperature (default: 0.7, range: 0.0-2.0)

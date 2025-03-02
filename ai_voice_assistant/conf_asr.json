@@ -1,16 +1,8 @@
 {
-    "EXAMPLE": {
-        "asr_name": "whisper",
-        "whisper": {
-            "model_size": "large-v3",
-            "compute_type": "float16",
-            "download_root": "models/whisper"
-        }
-    },
     "1": {
         "asr_name": "faster-whisper",
         "faster-whisper": {
-            "model_name": "h2oai/faster-whisper-large-v3-turbo",
+            "model_name": "Systran/faster-whisper-small",
             "device": "cpu",
             "compute_type": "float16",
             "download_root": "models/faster-whisper",

@@ -3,29 +3,44 @@ from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 import os
 from faster_whisper import WhisperModel
 import numpy as np
+import time
 
 class Transcriber:
-    def __init__(self, model_id="h2oai/faster-whisper-large-v3-turbo"):
+    def __init__(self, model_id="Systran/faster-whisper-small"):
         """Initialize the transcriber with Whisper model.
         
         Args:
-            model_id (str): Model identifier (default: "h2oai/faster-whisper-large-v3-turbo")
+            model_id (str): Model identifier (default: "Systran/faster-whisper-small")
         """
         self.model_id = model_id
         
         # Check if we're using faster-whisper or transformers
-        self.use_faster_whisper = "h2oai/faster" in model_id
+        self.use_faster_whisper = "Systran/faster-whisper" in model_id
         
         if self.use_faster_whisper:
             # Set compute type based on available hardware
             compute_type = "float16" if torch.cuda.is_available() else "int8"
             
+            # Handle the small model specifically
+            if model_id == "Systran/faster-whisper-small":
+                # For the small model, we use "small" directly
+                print("Using faster-whisper small model...")
+                model_name = "small"
+            else:
+                model_name = model_id
+            
             # Initialize faster-whisper model
-            self.model = WhisperModel(
-                model_id,
-                device="cuda" if torch.cuda.is_available() else "cpu",
-                compute_type=compute_type
-            )
+            try:
+                self.model = WhisperModel(
+                    model_name,
+                    device="cuda" if torch.cuda.is_available() else "cpu",
+                    compute_type=compute_type
+                )
+                print(f"Successfully loaded model: {model_name}")
+            except Exception as e:
+                print(f"Error loading model: {e}")
+                raise
+            
             self.pipe = None  # Not used with faster-whisper
         else:
             # Set device (MPS for MacOS, CUDA for NVIDIA, or CPU)
@@ -69,15 +84,30 @@ class Transcriber:
                 print(f"Warning: Audio file {audio_file} is empty or does not exist")
                 return ""
             
+            print(f"🎤 Starting transcription with model: {self.model_id.split('/')[-1]}...")
+            
+            start_time = time.time()
+            
             if self.use_faster_whisper:
                 # Use faster-whisper for transcription
                 segments, _ = self.model.transcribe(audio_file, beam_size=5)
                 text = " ".join([segment.text for segment in segments])
+                
+                end_time = time.time()
+                duration = end_time - start_time
+                print(f"✓ Transcription complete in {duration:.2f} seconds: \"{text[:50]}{'...' if len(text) > 50 else ''}\"")
+                
                 return text
             else:
                 # Use transformers pipeline for transcription
                 result = self.pipe(audio_file)
-                return result["text"]
+                
+                end_time = time.time()
+                duration = end_time - start_time
+                text = result["text"]
+                print(f"✓ Transcription complete in {duration:.2f} seconds: \"{text[:50]}{'...' if len(text) > 50 else ''}\"")
+                
+                return text
                 
         except TypeError as e:
             if "unsupported operand type(s) for *: 'NoneType'" in str(e):
