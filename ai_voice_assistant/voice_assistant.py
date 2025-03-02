@@ -2,6 +2,7 @@ from .audio_handler import AudioHandler
 from .transcriber import Transcriber
 from .llm_handler import LLMHandler
 from .tts_handler import TTSHandler
+import os
 
 
 class VoiceAssistant:
@@ -12,7 +13,6 @@ class VoiceAssistant:
             tts_model (str): The TTS model to use (default: "NeuML/kokoro-int8-onnx")
             tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart" - American female Nova)
             speech_speed (float): Speed factor for speech (default: 1.3, range: 0.5-2.0)
-            quantization (str): ONNX model quantization to use (default: "fp32", options: "fp32", "fp16", "q8", "q4", "q4f16")
         """
         self.audio_handler = AudioHandler()
         self.transcriber = Transcriber()
@@ -36,13 +36,12 @@ class VoiceAssistant:
             {"role": "system", "content": "You are a helpful AI voice assistant."}
         ]
         
-    def listen(self, duration=None, timeout=None, phrase_time_limit=None):
+    def listen(self, duration=None, timeout=None):
         """Record audio and transcribe it.
         
         Args:
             duration (int, optional): Fixed recording duration in seconds (legacy mode)
             timeout (int, optional): Maximum seconds to wait before giving up
-            phrase_time_limit (int, optional): Maximum seconds for a phrase
             
         Returns:
             str: Transcribed text
@@ -54,13 +53,35 @@ class VoiceAssistant:
             # Dynamic listening that stops when silence is detected
             audio_file = self.audio_handler.listen_for_speech(
                 timeout=timeout, 
-                phrase_time_limit=phrase_time_limit
             )
             
         if audio_file is None:
             return ""
+        
+        # Additional validation for the audio file
+        try:
+            if not os.path.exists(audio_file):
+                print(f"Warning: Audio file {audio_file} does not exist")
+                return ""
+                
+            file_size = os.path.getsize(audio_file)
+            if file_size == 0:
+                print(f"Warning: Audio file {audio_file} is empty (0 bytes)")
+                return ""
+                
+            if file_size < 1000:  # Less than 1KB is suspiciously small
+                print(f"Warning: Audio file {audio_file} is suspiciously small ({file_size} bytes)")
+                # We'll still try to transcribe it, but log the warning
+        except Exception as e:
+            print(f"Error validating audio file: {str(e)}")
+            return ""
             
-        return self.transcriber.transcribe(audio_file)
+        # Try to transcribe with additional error handling
+        try:
+            return self.transcriber.transcribe(audio_file)
+        except Exception as e:
+            print(f"Error during transcription: {str(e)}")
+            return ""
     
     def process_and_respond(self, text):
         """Process text with LLM and get response.
@@ -96,7 +117,18 @@ class VoiceAssistant:
             return False
             
         try:
+            # Ensure text is not None
+            if text is None:
+                print("Warning: Received None text to speak")
+                return False
+                
             audio_array, sample_rate = self.tts_handler.synthesize(text)
+            
+            # Ensure audio_array is not None
+            if audio_array is None:
+                print("Warning: Received None audio array from TTS handler")
+                return False
+                
             if len(audio_array) > 0:
                 self.audio_handler.play_audio(audio_array, sample_rate)
                 return True
@@ -105,35 +137,56 @@ class VoiceAssistant:
                 return False
         except Exception as e:
             print(f"Error in speech synthesis: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
     
-    def interact(self, duration=None, timeout=10, phrase_time_limit=60):
+    def interact(self, duration=None, timeout=10):
         """Complete interaction cycle: listen, process, respond, and speak.
         
         Args:
             duration (int, optional): Fixed recording duration in seconds (legacy mode)
             timeout (int, optional): Maximum seconds to wait before giving up
-            phrase_time_limit (int, optional): Maximum seconds for a phrase
             
         Returns:
             tuple: (transcribed_text, ai_response)
         """
-        # Listen and transcribe
-        transcribed_text = self.listen(
-            duration=duration, 
-            timeout=timeout, 
-            phrase_time_limit=phrase_time_limit
-        )
-        
-        if not transcribed_text:
-            return "", "I didn't hear anything. Could you please speak again?"
-        
-        # Process and get response
-        ai_response = self.process_and_respond(transcribed_text)
-        
-        # Speak the response
-        speech_success = self.speak(ai_response)
-        if not speech_success:
-            print("Note: The response was not spoken aloud due to TTS issues.")
-        
-        return transcribed_text, ai_response 
+        try:
+            # Listen and transcribe
+            transcribed_text = self.listen(
+                duration=duration, 
+                timeout=timeout,
+            )
+            
+            if not transcribed_text:
+                ai_response = "I didn't hear anything. Could you please speak again?"
+                # Try to speak the response
+                try:
+                    speech_success = self.speak(ai_response)
+                    if not speech_success:
+                        print("Note: The response was not spoken aloud due to TTS issues.")
+                except Exception as e:
+                    print(f"Error speaking response: {str(e)}")
+                return "", ai_response
+            
+            # Process and get response
+            try:
+                ai_response = self.process_and_respond(transcribed_text)
+            except Exception as e:
+                print(f"Error processing response: {str(e)}")
+                ai_response = "I'm sorry, I encountered an error while processing your request."
+            
+            # Speak the response
+            try:
+                speech_success = self.speak(ai_response)
+                if not speech_success:
+                    print("Note: The response was not spoken aloud due to TTS issues.")
+            except Exception as e:
+                print(f"Error speaking response: {str(e)}")
+            
+            return transcribed_text, ai_response
+        except Exception as e:
+            print(f"Unexpected error in interaction: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return "", "I'm sorry, I encountered an unexpected error." 

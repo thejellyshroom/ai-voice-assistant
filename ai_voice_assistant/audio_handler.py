@@ -14,58 +14,21 @@ class AudioHandler:
         self.format = pyaudio.paInt16
         self.pyaudio = pyaudio.PyAudio()
         self.recognizer = sr.Recognizer()
-        self.recognizer.pause_threshold = 1.0  # Seconds of silence before considering the phrase complete
+        self.recognizer.pause_threshold = 3.0  # Seconds of silence before considering the phrase complete
         self.recognizer.phrase_threshold = 0.3  # Minimum seconds of speaking audio before we consider the phrase started
         self.recognizer.non_speaking_duration = 0.5  # Seconds of non-speaking audio to keep on both sides of the recording
+        self.recognizer.energy_threshold = 300  # Minimum audio energy to consider for recording
+        self.recognizer.dynamic_energy_threshold = True  # Automatically adjust for ambient noise
+        self.recognizer.dynamic_energy_adjustment_damping = 0.15
+        self.recognizer.dynamic_energy_ratio = 1.5
 
-    def record_audio(self, filename="prompt.wav", duration=3):
-        """Record audio from microphone for specified duration.
         
-        Args:
-            filename (str): Output filename (will be saved as WAV)
-            duration (int): Recording duration in seconds
-            
-        Returns:
-            str: Path to the saved audio file
-        """
-        stream = self.pyaudio.open(
-            format=self.format,
-            channels=self.channels,
-            rate=self.sample_rate,
-            input=True,
-            frames_per_buffer=self.chunk
-        )
-
-        print("Recording...")
-        frames = []
-
-        for _ in range(0, int(self.sample_rate / self.chunk * duration)):
-            data = stream.read(self.chunk)
-            frames.append(data)
-
-        print("Recording finished.")
-
-        stream.stop_stream()
-        stream.close()
-
-        # Save the recorded data as a WAV file
-        wav_filename = filename if filename.endswith('.wav') else f"{filename}.wav"
-        with wave.open(wav_filename, 'wb') as wf:
-            wf.setnchannels(self.channels)
-            wf.setsampwidth(self.pyaudio.get_sample_size(self.format))
-            wf.setframerate(self.sample_rate)
-            wf.writeframes(b''.join(frames))
-
-        print(f"Audio saved as {wav_filename}")
-        return wav_filename
-        
-    def listen_for_speech(self, filename="prompt.wav", timeout=None, phrase_time_limit=None):
+    def listen_for_speech(self, filename="prompt.wav", timeout=None):
         """Record audio from microphone until silence is detected.
         
         Args:
             filename (str): Output filename (will be saved as WAV)
             timeout (int, optional): Maximum number of seconds to wait before giving up
-            phrase_time_limit (int, optional): Maximum number of seconds for a phrase
             
         Returns:
             str: Path to the saved audio file
@@ -81,7 +44,6 @@ class AudioHandler:
                 audio_data = self.recognizer.listen(
                     source, 
                     timeout=timeout, 
-                    phrase_time_limit=phrase_time_limit
                 )
                 
                 # Save the audio data to a WAV file

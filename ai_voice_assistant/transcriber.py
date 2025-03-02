@@ -1,5 +1,6 @@
 import torch
 from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+import os
 
 class Transcriber:
     def __init__(self, model_id="openai/whisper-large-v3-turbo"):
@@ -43,5 +44,19 @@ class Transcriber:
         Returns:
             str: Transcribed text
         """
-        result = self.pipe(audio_file)
-        return result["text"] 
+        try:
+            # Validate audio file
+            if not os.path.exists(audio_file) or os.path.getsize(audio_file) == 0:
+                print(f"Warning: Audio file {audio_file} is empty or does not exist")
+                return ""
+                
+            result = self.pipe(audio_file)
+            return result["text"]
+        except TypeError as e:
+            if "unsupported operand type(s) for *: 'NoneType'" in str(e):
+                print(f"Caught NoneType error in Whisper model. This may indicate an issue with the audio input.")
+                return ""
+            raise
+        except Exception as e:
+            print(f"Error in transcription: {str(e)}")
+            return "" 

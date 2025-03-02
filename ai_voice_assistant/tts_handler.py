@@ -9,7 +9,7 @@ import re
 
 
 class TTSHandler:
-    def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_nova", speech_speed=1.3):
+    def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_heart", speech_speed=1.3):
         self.model_id = model_id
         self.voice = voice
         self.speech_speed = max(0.5, min(2.0, speech_speed))  # Clamp between 0.5 and 2.0
@@ -48,6 +48,11 @@ class TTSHandler:
                         # Generate speech for each sentence
                         audio_segment = self._synthesize_single(sentence)
                         
+                        # Ensure audio_segment is not None
+                        if audio_segment is None:
+                            print(f"Warning: Got None audio segment for sentence: {sentence}")
+                            continue
+                            
                         if len(audio_segment) > 0:
                             audio_segments.append(audio_segment)
                             # Add a small silence between sentences (0.2 seconds)
@@ -70,10 +75,15 @@ class TTSHandler:
                         traceback.print_exc()
                         return np.zeros(0, dtype=np.float32), sample_rate
                 else:
+                    print("Warning: No audio segments were generated")
                     return np.zeros(0, dtype=np.float32), sample_rate
             else:
                 # Process short text directly
-                return self._synthesize_single(text), 24000
+                audio = self._synthesize_single(text)
+                if audio is None:
+                    print(f"Warning: Got None audio for text: {text}")
+                    return np.zeros(0, dtype=np.float32), 24000
+                return audio, 24000
         except Exception as e:
             # Catch-all for any unexpected errors
             print(f"Unexpected error in speech synthesis: {str(e)}")
@@ -100,7 +110,25 @@ class TTSHandler:
             
             audio_segments = []
             for _, _, audio in generator:
-                audio_segments.append(audio.numpy())
+                # Check if audio is None or not a tensor
+                if audio is None:
+                    print("Warning: Received None audio from Kokoro pipeline")
+                    continue
+                
+                # Handle different types of audio objects
+                if hasattr(audio, 'numpy'):
+                    # PyTorch tensor
+                    audio_segments.append(audio.numpy())
+                elif isinstance(audio, np.ndarray):
+                    # Already a numpy array
+                    audio_segments.append(audio)
+                else:
+                    # Try to convert to numpy array
+                    try:
+                        audio_segments.append(np.array(audio, dtype=np.float32))
+                    except Exception as e:
+                        print(f"Error converting audio to numpy array: {str(e)}")
+                        continue
             
             if audio_segments:
                 combined_audio = np.concatenate(audio_segments)
@@ -109,6 +137,8 @@ class TTSHandler:
                 return np.zeros(0, dtype=np.float32)
         except Exception as e:
             print(f"Error in Kokoro speech synthesis: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return np.zeros(0, dtype=np.float32)
     
     def _split_into_sentences(self, text):

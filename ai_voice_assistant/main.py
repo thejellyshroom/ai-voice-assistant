@@ -74,7 +74,6 @@ def main():
                 else:
                     transcribed_text, ai_response = assistant.interact(
                         timeout=args.timeout,
-                        phrase_time_limit=args.phrase_limit
                     )
                 
                 print("\nYou said:", transcribed_text)
