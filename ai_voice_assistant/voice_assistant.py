@@ -18,7 +18,7 @@ class VoiceAssistant:
                  tts_voice="af_heart", 
                  speech_speed=1.3,
                  expressiveness=1.0,
-                 variability=0.2,
+                 variability=0.3,
                  # ASR parameters 
                  transcription_model="h2oai/faster-whisper-large-v3-turbo",
                  # LLM parameters
@@ -73,11 +73,6 @@ class VoiceAssistant:
             {"role": "system", "content": "You are a helpful AI voice assistant."}
         ]
         
-        # Interruption handling
-        self.listening_thread = None
-        self.interrupted = False
-        self.allow_interruptions = False
-        
         # Initialize all components
         self.load_all_components()
         
@@ -102,7 +97,6 @@ class VoiceAssistant:
         print(f"TTS Model: {self.tts_model}")
         print(f"TTS Voice: {self.tts_voice}")
         print(f"Speech Speed: {self.speech_speed}x")
-        print(f"Interruptions: {'Enabled' if self.allow_interruptions else 'Disabled (use --enable-interruptions to allow interruptions)'}")
         print("Press Ctrl+C to exit")
     
     def _unload_component(self, component_name):
@@ -284,24 +278,11 @@ class VoiceAssistant:
             if text is None:
                 print("Warning: Received None text to speak")
                 return False
-            
-            # Start listening for interruptions if enabled
-            if self.allow_interruptions:
-                self.start_listening_for_interruptions()
-            else:
-                # Make sure we're not listening if interruptions are disabled
-                self.stop_listening_for_interruptions()
-            
+
             # Split text into sentences for more natural pauses
             sentences = self._split_into_sentences(text)
             
             for sentence in sentences:
-                # Check if we've been interrupted
-                if self.interrupted:
-                    print("Speech interrupted by user.")
-                    self.interrupted = False
-                    return False
-                
                 # Synthesize and play the sentence
                 audio_array, sample_rate = self.tts_handler.synthesize(sentence)
                 
@@ -323,15 +304,12 @@ class VoiceAssistant:
                 # Let the AudioHandler calculate the appropriate timeout based on the audio duration
                 self.audio_handler.wait_for_playback_complete(timeout=None)
             
-            # Stop listening for interruptions
-            self.stop_listening_for_interruptions()
             return True
             
         except Exception as e:
             print(f"Error in speech synthesis: {str(e)}")
             import traceback
             traceback.print_exc()
-            self.stop_listening_for_interruptions()
             return False
     
     def speak_streaming(self, text):
@@ -352,12 +330,7 @@ class VoiceAssistant:
         for i, sentence in enumerate(sentences):
             if i == 0 and sentence == "...":  # Skip our buffer
                 continue
-                
-            if self.interrupted:
-                # Finish current sentence before stopping
-                audio_array, sr = self.tts_handler.synthesize(sentence)
-                self.audio_handler.play_audio(audio_array, sr)
-                break
+
             if not self.tts_enabled:
                 print("TTS is disabled. Cannot speak the response.")
                 return False
@@ -368,22 +341,10 @@ class VoiceAssistant:
                 print("Warning: Received None text to speak")
                 return False
             
-            # Start listening for interruptions if enabled
-            if self.allow_interruptions:
-                self.start_listening_for_interruptions()
-            else:
-                # Make sure we're not listening if interruptions are disabled
-                self.stop_listening_for_interruptions()
-            
             # Split text into sentences for more natural streaming
             sentences = self._split_into_sentences(text)
             
             for sentence in sentences:
-                # Check if we've been interrupted
-                if self.interrupted:
-                    print("Speech interrupted by user.")
-                    self.interrupted = False
-                    return False
                 
                 # Synthesize and play the sentence
                 audio_array, sample_rate = self.tts_handler.synthesize(sentence)
@@ -406,15 +367,12 @@ class VoiceAssistant:
                 # Let the AudioHandler calculate the appropriate timeout based on the audio duration
                 self.audio_handler.wait_for_playback_complete(timeout=None)
             
-            # Stop listening for interruptions
-            self.stop_listening_for_interruptions()
             return True
             
         except Exception as e:
             print(f"Error in speech synthesis: {str(e)}")
             import traceback
             traceback.print_exc()
-            self.stop_listening_for_interruptions()
             return False
     
     def _split_into_sentences(self, text):
@@ -433,47 +391,6 @@ class VoiceAssistant:
         sentences = [s.strip() for s in sentences if s.strip()]
         return sentences
     
-    def start_listening_for_interruptions(self):
-        """Start a background thread to listen for user interruptions."""
-        self.interrupted = False
-        if self.listening_thread is None or not self.listening_thread.is_alive():
-            self.listening_thread = threading.Thread(
-                target=self._listen_for_interruptions_thread,
-                daemon=True
-            )
-            self.listening_thread.start()
-    
-    def stop_listening_for_interruptions(self):
-        """Stop the background thread listening for interruptions."""
-        if self.listening_thread and self.listening_thread.is_alive():
-            # The thread will terminate on its own due to timeout
-            self.listening_thread = None
-    
-    def _listen_for_interruptions_thread(self):
-        """Modified to handle response cutoff"""
-        try:
-            audio_file = self.audio_handler.listen_while_speaking(timeout=5, phrase_limit=10)
-            if audio_file:
-                # New: Add 0.5s delay before processing to capture full audio
-                time.sleep(0.5)
-                
-                interruption_text = self.transcriber.transcribe(audio_file)
-                if len(interruption_text.strip()) > 3:
-                    print(f"\n🚨 INTERRUPTION DETECTED: {interruption_text}")
-                    
-                    # New: Clear any queued audio but let current sentence finish
-                    self.audio_handler.audio_queue.queue.clear()
-                    
-                    # Add to conversation history immediately
-                    self.conversation_history.append({"role": "user", "content": interruption_text})
-                    
-                    # New: Wait for current audio chunk to finish
-                    while self.audio_handler.is_playing:
-                        time.sleep(0.1)
-                    
-                    self.interrupted = True
-        except Exception as e:
-            print(f"Interruption thread error: {e}")
 
     def interact_streaming(self, duration=None, timeout=10, phrase_limit=60):
         """Record audio, transcribe, process with streaming response.
@@ -491,10 +408,6 @@ class VoiceAssistant:
         """
         try:
             # ===== PHASE 1: PREPARATION =====
-            # Reset any interruption state
-            self.interrupted = False
-            self.stop_listening_for_interruptions()
-            
             # Ensure all audio playback is completely stopped
             if self.audio_handler:
                 self.audio_handler.stop_playback()
@@ -594,24 +507,3 @@ class VoiceAssistant:
             traceback.print_exc()
             return "", "I'm sorry, I encountered an unexpected error."
             
-    def toggle_interruptions(self, allow=None):
-        """Toggle whether interruptions are allowed.
-        
-        Args:
-            allow (bool, optional): If provided, set interruption state to this value
-                                   If not provided, toggle the current state
-        
-        Returns:
-            bool: New interruption state
-        """
-        if allow is not None:
-            self.allow_interruptions = allow
-        else:
-            self.allow_interruptions = not self.allow_interruptions
-            
-        if self.allow_interruptions:
-            print("Interruptions are now enabled - assistant will listen while speaking")
-        else:
-            print("Interruptions are now disabled - assistant will not listen while speaking")
-            
-        return self.allow_interruptions 

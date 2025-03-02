@@ -99,10 +99,6 @@ def main():
                         help='List all available transcription models and exit')
     
     
-    # Add interruption control option
-    parser.add_argument('--enable-interruptions', action='store_true',
-                        help='Enable the ability to interrupt the assistant while speaking (disabled by default)')
-    
     # Add configuration file options
     parser.add_argument('--config', type=str, help='Path to configuration file')
     parser.add_argument('--asr-config', type=str, help='Path to ASR configuration file')
@@ -218,11 +214,7 @@ def main():
         top_k=top_k,
         creativity=creativity
     )
-    
-    # Enable interruptions if requested
-    if args.enable_interruptions:
-        assistant.toggle_interruptions(allow=True)
-    
+
     # Start the interaction loop
     try:
         while True:

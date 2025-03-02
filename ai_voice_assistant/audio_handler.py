@@ -96,7 +96,7 @@ class AudioHandler:
                         audio_duration = len(audio_data.frame_data) / (2 * 16000)
                         audio_energy = np.sqrt(np.mean(np.square(audio_as_numpy)))
                         
-                        print(f"Listening finished: Duration={audio_duration:.2f}s, Energy={audio_energy:.2f}")
+                        print(f"Listening finished: Energy={audio_energy:.2f}")
                         
                         if audio_duration < 0.5 or audio_energy < 20:
                             print("Warning: Very short or low energy audio detected.")
@@ -331,104 +331,6 @@ class AudioHandler:
             self.is_playing = False
             self.total_audio_duration = 0.0  # Reset duration tracking
 
-    def listen_while_speaking(self, timeout=10, phrase_limit=60, debounce_time=2.0, min_energy=25):
-        """Listen for speech while the AI might be speaking.
-        
-        Args:
-            timeout (int): Maximum seconds to wait before giving up
-            phrase_limit (int): Maximum seconds for a single phrase
-            debounce_time (float): Minimum time between interruption detections
-            min_energy (int): Minimum energy level to consider as speech
-            
-        Returns:
-            str: Path to the saved audio file or None if no speech detected
-        """
-        # We don't stop playback here, as we want to listen WHILE speaking
-        
-        print("Listening for interruption...")
-
-        # Store original values
-        original_pause_threshold = self.recognizer.pause_threshold
-        original_phrase_threshold = self.recognizer.phrase_threshold
-        original_non_speaking_duration = self.recognizer.non_speaking_duration
-
-        last_interrupt_time = 0
-        with sr.Microphone() as source:
-                # Adjust for ambient noise with a longer duration
-                self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
-                
-                try:
-                    # Use balanced settings for interruption detection
-                    # For interruptions, we want slightly more responsive detection
-                    self.recognizer.pause_threshold = 1.0      # Shorter pause for interruption detection
-                    self.recognizer.phrase_threshold = 0.2     # Same as listen_for_speech
-                    self.recognizer.non_speaking_duration = 0.5  # Shorter to be more responsive to interruptions
-                    
-                    while True:
-                        try:
-                            audio_data = self.recognizer.listen(
-                                source, 
-                                timeout=timeout,
-                                phrase_time_limit=phrase_limit,
-                                snowboy_configuration=(
-                                    self.recognizer.pause_threshold,
-                                    self.recognizer.phrase_threshold,
-                                    0.5  # Pre-roll buffer (new)
-                                )
-                            )
-
-                             # New: Audio validation pipeline
-                            validation_passed = True
-                            audio_as_numpy = np.frombuffer(audio_data.frame_data, dtype=np.int16)
-
-                            audio_duration = len(audio_data.frame_data) / (2 * 16000) 
-                            if audio_duration < 1.0:  # Increased minimum duration
-                                print(f"Rejected: Duration too short ({audio_duration:.2f}s)")
-                                validation_passed = False
-                            
-                            # Check if the audio has enough energy to be considered speech
-                            audio_as_numpy = np.frombuffer(audio_data.frame_data, dtype=np.int16)
-                            
-                            # Calculate RMS energy
-                            audio_energy = np.sqrt(np.mean(np.square(audio_as_numpy)))
-                            if audio_energy < 25:  # Very low energy is likely just background noise
-                                print(f"Rejected: Low energy ({audio_energy:.2f} dB)")
-                                validation_passed = False
-                            
-                            # Calculate zero crossing rate (helps detect speech vs noise)
-                            zero_crossings = np.sum(np.abs(np.diff(np.signbit(audio_as_numpy))))/len(audio_as_numpy)
-                            if zero_crossings > 0.35:  # More strict threshold
-                                print(f"Rejected: High noise ({zero_crossings:.4f} crossings)")
-                                validation_passed = False
-
-                            # 4. Spectral Flatness Check (new)
-                            fft = np.fft.rfft(audio_as_numpy.astype(float))
-                            fft_mag = np.abs(fft)
-                            spectral_flatness = np.exp(np.mean(np.log(fft_mag + 1e-10))) / np.mean(fft_mag)
-                            if spectral_flatness > 0.8:
-                                print(f"Rejected: Flat spectrum ({spectral_flatness:.2f})")
-                                validation_passed = False
-
-                            if not validation_passed:
-                                continue
-                             # Save and process valid audio
-                            wav_filename = "interrupt.wav"
-                            with open(wav_filename, "wb") as f:
-                                f.write(audio_data.get_wav_data())
-                                
-                            print(f"VALID INTERRUPTION: Energy={audio_energy:.2f}dB, Duration={audio_duration:.2f}s")
-                            self.stop_playback()
-                            return wav_filename
-                            
-                        except sr.WaitTimeoutError:
-                            continue
-                except Exception as e:
-                    print(f"Error in listen_while_speaking: {e}")
-                finally:
-                    # Make sure we restore the original parameters
-                    self.recognizer.pause_threshold = original_pause_threshold
-                    self.recognizer.phrase_threshold = original_phrase_threshold
-                    self.recognizer.non_speaking_duration = original_non_speaking_duration
 
     def __del__(self):
         """Cleanup PyAudio resources."""
