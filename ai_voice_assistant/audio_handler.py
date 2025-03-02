@@ -17,7 +17,7 @@ class AudioHandler:
         self.format = pyaudio.paInt16
         self.pyaudio = pyaudio.PyAudio()
         self.recognizer = sr.Recognizer()
-        self.recognizer.pause_threshold = 2.0  # Seconds of silence before considering the phrase complete (increased from 1.5)
+        self.recognizer.pause_threshold = 1.0  # Seconds of silence before considering the phrase complete (increased from 1.5)
         self.recognizer.phrase_threshold = 0.3  # Minimum seconds of speaking audio before we consider the phrase started
         self.recognizer.non_speaking_duration = 0.5  # Seconds of non-speaking audio to keep on both sides of the recording
         self.recognizer.energy_threshold = 20  # Minimum audio energy to consider for recording (lowered based on observed values)
@@ -64,10 +64,10 @@ class AudioHandler:
         original_non_speaking_duration = self.recognizer.non_speaking_duration
         
         try:
-            # Use more sensitive settings for better detection
-            self.recognizer.pause_threshold = 1.0
-            self.recognizer.phrase_threshold = 0.2
-            self.recognizer.non_speaking_duration = 0.5  # Slightly longer to avoid cutting off speech too early
+            # Use balanced settings that won't cut off too early or wait too long
+            self.recognizer.pause_threshold = 1.5      # Wait 1.5 seconds of silence before ending (balanced)
+            self.recognizer.phrase_threshold = 0.2     # Detect speech relatively quickly
+            self.recognizer.non_speaking_duration = 0.8  # Keep some silence but not too much
             
             retry_count = 0
             max_retries = 2
@@ -347,15 +347,23 @@ class AudioHandler:
         
         print("Listening for interruption...")
 
+        # Store original values
+        original_pause_threshold = self.recognizer.pause_threshold
+        original_phrase_threshold = self.recognizer.phrase_threshold
+        original_non_speaking_duration = self.recognizer.non_speaking_duration
+
         last_interrupt_time = 0
         with sr.Microphone() as source:
                 # Adjust for ambient noise with a longer duration
                 self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
                 
                 try:
-                    self.recognizer.pause_threshold = 0.8
-                    self.recognizer.phrase_threshold = 0.3
-                    self.recognizer.non_speaking_duration = 0.2
+                    # Use balanced settings for interruption detection
+                    # For interruptions, we want slightly more responsive detection
+                    self.recognizer.pause_threshold = 1.0      # Shorter pause for interruption detection
+                    self.recognizer.phrase_threshold = 0.2     # Same as listen_for_speech
+                    self.recognizer.non_speaking_duration = 0.5  # Shorter to be more responsive to interruptions
+                    
                     while True:
                         try:
                             audio_data = self.recognizer.listen(
@@ -418,8 +426,9 @@ class AudioHandler:
                     print(f"Error in listen_while_speaking: {e}")
                 finally:
                     # Make sure we restore the original parameters
-                    self.recognizer.pause_threshold = 2.0
-                    self.recognizer.phrase_threshold = 0.3
+                    self.recognizer.pause_threshold = original_pause_threshold
+                    self.recognizer.phrase_threshold = original_phrase_threshold
+                    self.recognizer.non_speaking_duration = original_non_speaking_duration
 
     def __del__(self):
         """Cleanup PyAudio resources."""
