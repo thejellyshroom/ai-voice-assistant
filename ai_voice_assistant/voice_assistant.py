@@ -3,19 +3,21 @@ from .transcriber import Transcriber
 from .llm_handler import LLMHandler
 from .tts_handler import TTSHandler
 import os
+import torch
 
 
 class VoiceAssistant:
-    def __init__(self, tts_model="hexgrad/Kokoro-82M", tts_voice="af_heart", speech_speed=1.3):
+    def __init__(self, tts_model="hexgrad/Kokoro-82M", tts_voice="af_heart", speech_speed=1.3, transcription_model="h2oai/faster-whisper-large-v3-turbo"):
         """Initialize the voice assistant with all components.
         
         Args:
-            tts_model (str): The TTS model to use (default: "NeuML/kokoro-int8-onnx")
+            tts_model (str): The TTS model to use (default: "hexgrad/Kokoro-82M")
             tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart" - American female Nova)
             speech_speed (float): Speed factor for speech (default: 1.3, range: 0.5-2.0)
+            transcription_model (str): The transcription model to use (default: "h2oai/faster-whisper-large-v3-turbo")
         """
         self.audio_handler = AudioHandler()
-        self.transcriber = Transcriber()
+        self.transcriber = Transcriber(model_id=transcription_model)
         self.llm_handler = LLMHandler()
         
         # Initialize TTS with error handling
@@ -35,6 +37,22 @@ class VoiceAssistant:
         self.conversation_history = [
             {"role": "system", "content": "You are a helpful AI voice assistant."}
         ]
+        
+        # Print initialization information
+        print("\nAI Voice Assistant initialized!")
+        print(f"Transcription model: {transcription_model}")
+        
+        # Determine device display
+        if self.transcriber.use_faster_whisper:
+            device = "CUDA" if torch.cuda.is_available() else "CPU"
+        else:
+            device = self.transcriber.device
+        print(f"Device: {device}")
+        
+        print(f"TTS Model: {tts_model}")
+        print(f"TTS Voice: {tts_voice}")
+        print(f"Speech Speed: {speech_speed}x")
+        print("Press Ctrl+C to exit")
         
     def listen(self, duration=None, timeout=None):
         """Record audio and transcribe it.
@@ -142,21 +160,18 @@ class VoiceAssistant:
             return False
     
     def interact(self, duration=None, timeout=10):
-        """Complete interaction cycle: listen, process, respond, and speak.
+        """Record audio, transcribe, process, and respond.
         
         Args:
-            duration (int, optional): Fixed recording duration in seconds (legacy mode)
+            duration (int, optional): Fixed recording duration in seconds
             timeout (int, optional): Maximum seconds to wait before giving up
             
         Returns:
             tuple: (transcribed_text, ai_response)
         """
         try:
-            # Listen and transcribe
-            transcribed_text = self.listen(
-                duration=duration, 
-                timeout=timeout,
-            )
+            print("\nListening for your voice...")
+            transcribed_text = self.listen(duration=duration, timeout=timeout)
             
             if not transcribed_text:
                 ai_response = "I didn't hear anything. Could you please speak again?"
@@ -168,6 +183,8 @@ class VoiceAssistant:
                 except Exception as e:
                     print(f"Error speaking response: {str(e)}")
                 return "", ai_response
+                
+            print("\nYou said:", transcribed_text)
             
             # Process and get response
             try:
@@ -175,6 +192,8 @@ class VoiceAssistant:
             except Exception as e:
                 print(f"Error processing response: {str(e)}")
                 ai_response = "I'm sorry, I encountered an error while processing your request."
+            
+            print("Assistant:", ai_response)
             
             # Speak the response
             try:

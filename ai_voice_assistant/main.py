@@ -10,6 +10,12 @@ KOKORO_VOICES = {
     "British Male": ["bm_daniel", "bm_fable", "bm_george", "bm_lewis"]
 }
 
+# Define available transcription models
+TRANSCRIPTION_MODELS = {
+    "faster-whisper": "h2oai/faster-whisper-large-v3-turbo",
+    "transformers-whisper": "openai/whisper-large-v3-turbo"
+}
+
 def list_available_voices():
     """Print a formatted list of available voices."""
     print("\nAvailable Kokoro voices:")
@@ -17,6 +23,13 @@ def list_available_voices():
         print(f"  {accent}:")
         for voice in voices:
             print(f"    - {voice}")
+    print()
+
+def list_available_transcription_models():
+    """Print a formatted list of available transcription models."""
+    print("\nAvailable transcription models:")
+    for name, model_id in TRANSCRIPTION_MODELS.items():
+        print(f"  - {name}: {model_id}")
     print()
 
 def main():
@@ -33,11 +46,24 @@ def main():
     parser.add_argument('--speech-speed', type=float, default=1.3, 
                         help='Speed factor for speech (default: 1.3, range: 0.5-2.0)')
     parser.add_argument('--list-voices', action='store_true', help='List all available Kokoro voices and exit')
+    
+    # Add transcription model options
+    parser.add_argument('--transcription-model', type=str, default="faster-whisper", 
+                        choices=list(TRANSCRIPTION_MODELS.keys()),
+                        help='Transcription model to use (default: faster-whisper)')
+    parser.add_argument('--list-transcription-models', action='store_true', 
+                        help='List all available transcription models and exit')
+    
     args = parser.parse_args()
     
     # If --list-voices is specified, print available voices and exit
     if args.list_voices:
         list_available_voices()
+        return
+    
+    # If --list-transcription-models is specified, print available models and exit
+    if args.list_transcription_models:
+        list_available_transcription_models()
         return
     
     # Check if the specified voice is valid
@@ -48,51 +74,24 @@ def main():
         print("Use --list-voices to see all available voices.")
         args.tts_voice = "af_heart"
     
+    # Get the transcription model ID
+    transcription_model = TRANSCRIPTION_MODELS[args.transcription_model]
+    print(f"Using transcription model: {args.transcription_model} ({transcription_model})")
+    
     # Initialize the voice assistant
+    assistant = VoiceAssistant(
+        tts_model=args.tts_model,
+        tts_voice=args.tts_voice,
+        speech_speed=args.speech_speed,
+        transcription_model=transcription_model
+    )
+    
+    # Start the interaction loop
     try:
-        assistant = VoiceAssistant(
-            tts_model=args.tts_model, 
-            tts_voice=args.tts_voice,
-            speech_speed=args.speech_speed
-        )
-        
-        print("\nAI Voice Assistant initialized!")
-        print("Device set to use:", assistant.transcriber.device)
-        print("TTS Model:", args.tts_model)
-        print("TTS Voice:", args.tts_voice)
-        print("Speech Speed:", f"{args.speech_speed}x")
-        # Remove the ONNX Quantization print
-        print("Press Ctrl+C to exit")
-        
-        try:
-            while True:
-                print("\nListening for your voice...")
-                
-                # Use either fixed duration or dynamic listening based on arguments
-                if args.fixed_duration:
-                    transcribed_text, ai_response = assistant.interact(duration=args.fixed_duration)
-                else:
-                    transcribed_text, ai_response = assistant.interact(
-                        timeout=args.timeout,
-                    )
-                
-                print("\nYou said:", transcribed_text)
-                print("Assistant:", ai_response)
-                
-        except KeyboardInterrupt:
-            print("\nGoodbye!")
-    except Exception as e:
-        print(f"Error initializing voice assistant: {str(e)}")
-        print("\nTroubleshooting tips:")
-        print("1. Make sure espeak-ng is installed on your system")
-        print("   - macOS: brew install espeak-ng")
-        print("   - Linux: sudo apt-get install espeak-ng")
-        print("2. Check that all Python dependencies are installed")
-        print("   - Run: pip install -r requirements.txt")
-        print("3. Try a different voice with --tts-voice")
-        print("   - Run: python -m ai_voice_assistant.main --list-voices")
-        print("4. Try a different quantization level with --quantization")
-        print("   - Options: fp32, fp16, q8, q4, q4f16")
+        while True:
+            assistant.interact(duration=args.fixed_duration, timeout=args.timeout)
+    except KeyboardInterrupt:
+        print("\nExiting...")
 
 if __name__ == "__main__":
     main() 
