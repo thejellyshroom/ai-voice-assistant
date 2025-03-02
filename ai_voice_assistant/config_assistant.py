@@ -109,7 +109,7 @@ def main():
     # Start the interaction loop
     try:
         while True:
-            assistant.interact(timeout=args.timeout)
+            assistant.interact_streaming(timeout=args.timeout)
     except KeyboardInterrupt:
         print("\nExiting...")
 

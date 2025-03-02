@@ -74,8 +74,8 @@ def main():
     
     
     # Add interruption control option
-    parser.add_argument('--no-interruptions', action='store_true',
-                        help='Disable the ability to interrupt the assistant while speaking')
+    parser.add_argument('--enable-interruptions', action='store_true',
+                        help='Enable the ability to interrupt the assistant while speaking (disabled by default)')
     
     # Add configuration file options
     parser.add_argument('--config', type=str, help='Path to configuration file')
@@ -150,9 +150,9 @@ def main():
         transcription_model=transcription_model
     )
     
-    # Disable interruptions if requested
-    if args.no_interruptions:
-        assistant.toggle_interruptions(allow=False)
+    # Enable interruptions if requested
+    if args.enable_interruptions:
+        assistant.toggle_interruptions(allow=True)
     
     # Start the interaction loop
     try:
