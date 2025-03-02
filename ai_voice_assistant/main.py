@@ -25,14 +25,13 @@ def main():
     parser.add_argument('--fixed-duration', type=int, help='Use fixed duration recording instead of dynamic listening')
     parser.add_argument('--timeout', type=int, default=10, help='Maximum seconds to wait for speech before giving up')
     parser.add_argument('--phrase-limit', type=int, default=60, help='Maximum seconds for a single phrase')
-    parser.add_argument('--tts-model', type=str, default="NeuML/kokoro-int8-onnx", 
-                        help='TTS model to use (default: NeuML/kokoro-int8-onnx)')
-    parser.add_argument('--tts-voice', type=str, default="af_nova", 
-                        help='Voice to use for Kokoro TTS (default: af_nova)')
-    parser.add_argument('--speech-speed', type=float, default=1.5, 
-                        help='Speed factor for speech (default: 1.5, range: 0.5-2.0)')
-    parser.add_argument('--quantization', type=str, default="fp32", choices=["fp32", "fp16", "q8", "q4", "q4f16"],
-                        help='ONNX model quantization to use (default: fp32)')
+
+    parser.add_argument('--tts-model', type=str, default="hexgrad/Kokoro-82M", 
+                        help='TTS model to use (default: hexgrad/Kokoro-82M)')
+    parser.add_argument('--tts-voice', type=str, default="af_heart", 
+                        help='Voice to use for Kokoro TTS (default: af_heart)')
+    parser.add_argument('--speech-speed', type=float, default=1.3, 
+                        help='Speed factor for speech (default: 1.3, range: 0.5-2.0)')
     parser.add_argument('--list-voices', action='store_true', help='List all available Kokoro voices and exit')
     args = parser.parse_args()
     
@@ -45,17 +44,16 @@ def main():
     all_voices = [voice for voices in KOKORO_VOICES.values() for voice in voices]
     if args.tts_voice not in all_voices:
         print(f"Warning: '{args.tts_voice}' is not a recognized Kokoro voice.")
-        print("Using default voice 'af_nova' instead.")
+        print("Using default voice 'af_heart' instead.")
         print("Use --list-voices to see all available voices.")
-        args.tts_voice = "af_nova"
+        args.tts_voice = "af_heart"
     
     # Initialize the voice assistant
     try:
         assistant = VoiceAssistant(
             tts_model=args.tts_model, 
             tts_voice=args.tts_voice,
-            speech_speed=args.speech_speed,
-            quantization=args.quantization
+            speech_speed=args.speech_speed
         )
         
         print("\nAI Voice Assistant initialized!")
@@ -63,7 +61,7 @@ def main():
         print("TTS Model:", args.tts_model)
         print("TTS Voice:", args.tts_voice)
         print("Speech Speed:", f"{args.speech_speed}x")
-        print("ONNX Quantization:", args.quantization)
+        # Remove the ONNX Quantization print
         print("Press Ctrl+C to exit")
         
         try:

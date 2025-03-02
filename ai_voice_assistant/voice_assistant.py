@@ -3,13 +3,14 @@ from .transcriber import Transcriber
 from .llm_handler import LLMHandler
 from .tts_handler import TTSHandler
 
+
 class VoiceAssistant:
-    def __init__(self, tts_model="NeuML/kokoro-int8-onnx", tts_voice="af_nova", speech_speed=1.3, quantization="fp32"):
+    def __init__(self, tts_model="hexgrad/Kokoro-82M", tts_voice="af_heart", speech_speed=1.3):
         """Initialize the voice assistant with all components.
         
         Args:
             tts_model (str): The TTS model to use (default: "NeuML/kokoro-int8-onnx")
-            tts_voice (str): The voice to use for Kokoro TTS (default: "af_nova" - American female Nova)
+            tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart" - American female Nova)
             speech_speed (float): Speed factor for speech (default: 1.3, range: 0.5-2.0)
             quantization (str): ONNX model quantization to use (default: "fp32", options: "fp32", "fp16", "q8", "q4", "q4f16")
         """
@@ -23,7 +24,6 @@ class VoiceAssistant:
                 model_id=tts_model, 
                 voice=tts_voice, 
                 speech_speed=speech_speed,
-                quantization=quantization
             )
             self.tts_enabled = True
         except Exception as e:
