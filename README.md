@@ -1,125 +1,160 @@
 # AI Voice Assistant
 
-A voice-based AI assistant using Whisper for speech recognition, Ollama for LLM interaction, and Kokoro v1 for text-to-speech.
+An interactive voice assistant that uses speech recognition, large language models, and text-to-speech to create a natural conversation experience.
 
-## Requirements
+## Features
 
-- Python 3.10 (specifically required for compatibility)
-- Conda or Miniconda (recommended for environment management)
-- FFmpeg (for audio processing)
-- PortAudio (for PyAudio)
-- espeak-ng (for Kokoro TTS phoneme generation)
+- **Speech Recognition**: Uses faster-whisper or transformers-based Whisper models for accurate transcription
+- **Natural Language Processing**: Powered by Ollama for local LLM inference
+- **Text-to-Speech**: Uses Kokoro TTS for high-quality voice synthesis
+- **Streaming Mode**: Real-time response generation and speech synthesis for more natural conversations
+- **Interruption Handling**: Allows interrupting the assistant while it's speaking
+- **Configuration Files**: Supports JSON configuration files for easy customization
 
-## Setup
-
-### Option 1: Automatic Setup (Recommended)
+## Installation
 
 1. Clone this repository:
 
    ```
-   git clone <repository-url>
+   git clone https://github.com/yourusername/ai-voice-assistant.git
    cd ai-voice-assistant
    ```
 
-2. Run the setup script to create a Python 3.10 environment and install all dependencies:
+2. Install the required dependencies:
 
    ```
-   chmod +x setup_py310_env.sh
-   ./setup_py310_env.sh
+   pip install -r requirements.txt
    ```
 
-### Option 2: Manual Setup
-
-1. Create a new conda environment with Python 3.10:
+3. Make sure you have Ollama installed and running for LLM inference:
 
    ```
-   conda create -n ai-voice-py310 python=3.10
-   conda activate ai-voice-py310
+   # Install Ollama from https://ollama.ai/
+   # Pull the llama3.2 model
+   ollama pull llama3.2
    ```
-
-2. Install system dependencies:
-
-   - On macOS:
-     ```
-     brew install portaudio ffmpeg espeak-ng
-     ```
-   - On Ubuntu/Debian:
-     ```
-     sudo apt-get install portaudio19-dev ffmpeg espeak-ng
-     ```
-
-3. Install Python dependencies:
-
-   ```
-   pip install torch==2.1.2 torchaudio==2.1.2
-   pip install transformers==4.37.2
-   pip install accelerate==0.26.1 sentencepiece==0.1.99 einops==0.7.0
-   pip install soundfile==0.12.1 sounddevice==0.4.6
-   pip install numpy==1.24.4 scipy==1.11.4 librosa==0.10.1
-   pip install ollama pyaudio SpeechRecognition ffmpeg-python
-   pip install kokoro>=0.3.4
-   ```
-
-4. Install the package in development mode:
-   ```
-   pip install -e .
-   ```
-
-## Testing
-
-Test the Kokoro TTS model:
-
-```
-python test_kokoro_tts.py
-```
-
-You can also test different voices:
-
-```
-python test_kokoro_tts.py --voice af_bella
-```
-
-Available voices include:
-
-- American English: af (default), af_bella, af_sarah, af_sky, af_nicole, am_adam, am_michael
-- British English: bf_emma, bf_isabella, bm_george, bm_lewis
 
 ## Usage
 
-1. Activate the environment:
+### Basic Usage
 
-   ```
-   conda activate ai-voice-py310
-   ```
+Run the assistant with default settings:
 
-2. Run the voice assistant:
+```
+python -m ai_voice_assistant.main
+```
 
-   ```
-   python -m ai_voice_assistant.main
-   ```
+### Command Line Options
 
-   Optional arguments:
+The assistant supports various command line options:
 
-   - `--fixed-duration N`: Use fixed duration recording of N seconds instead of dynamic listening
-   - `--timeout N`: Maximum seconds to wait for speech before giving up (default: 10)
-   - `--phrase-limit N`: Maximum seconds for a single phrase (default: 60)
-   - `--tts-model MODEL`: TTS model to use (default: hexgrad/Kokoro-82M)
-   - `--tts-voice VOICE`: Voice to use for Kokoro TTS (default: af_sky)
+```
+python -m ai_voice_assistant.main --tts-voice af_nova --speech-speed 1.5 --streaming
+```
 
-## Features
+Key options:
 
-- **Speech Recognition**: Uses OpenAI's Whisper model for accurate transcription
-- **Natural Language Processing**: Processes queries with Ollama's LLM models
-- **Text-to-Speech**: Generates natural-sounding responses using Kokoro v1 TTS model
-- **Dynamic Listening**: Automatically detects when you start and stop speaking
-- **Multiple Voices**: Choose from a variety of American and British English voices
+- `--streaming`: Enable streaming mode for more interactive responses
+- `--tts-voice`: Select a voice for TTS (use `--list-voices` to see available options)
+- `--speech-speed`: Adjust the speech speed (0.5-2.0)
+- `--transcription-model`: Choose the transcription model (faster-whisper or transformers-whisper)
+- `--timeout`: Maximum seconds to wait for speech before giving up
+- `--phrase-limit`: Maximum seconds for a single phrase
+- `--no-interruptions`: Disable the ability to interrupt the assistant while speaking
 
-## Troubleshooting
+If you're experiencing issues with audio capture or false interruption detections, try these options:
 
-- **PyAudio Installation Issues**: If you encounter problems installing PyAudio, make sure you have PortAudio installed on your system.
-- **TTS Model Loading Issues**: Kokoro requires espeak-ng for phoneme generation. Make sure it's installed on your system.
-- **Audio Playback Issues**: If you encounter audio playback issues, check your system's audio settings and ensure the correct output device is selected.
+```
+python -m ai_voice_assistant.main --no-interruptions
+```
+
+### Configuration Files
+
+You can use JSON configuration files to customize the assistant:
+
+```
+python -m ai_voice_assistant.main --config config.json --asr-config conf_asr.json --tts-config conf_tts.json --llm-config conf_llm.json
+```
+
+Example configuration files are provided in the repository:
+
+- `conf_asr.json`: Configuration for speech recognition
+- `conf_tts.json`: Configuration for text-to-speech
+- `conf_llm.json`: Configuration for the language model
+
+## Available Voices
+
+The assistant uses Kokoro TTS with various voice options. To list all available voices:
+
+```
+python -m ai_voice_assistant.main --list-voices
+```
+
+## Transcription Models
+
+To list available transcription models:
+
+```
+python -m ai_voice_assistant.main --list-transcription-models
+```
+
+## Interaction
+
+Once the assistant is running:
+
+1. Speak when prompted
+2. The assistant will transcribe your speech, process it, and respond
+3. In streaming mode, the assistant will start speaking as it generates the response
+4. You can interrupt the assistant by speaking while it's responding
+
+Press Ctrl+C to exit the assistant.
+
+## Architecture
+
+The assistant consists of several components:
+
+- `VoiceAssistant`: Main class that coordinates all components
+- `AudioHandler`: Handles audio recording and playback
+- `Transcriber`: Converts speech to text
+- `LLMHandler`: Processes text with a language model
+- `TTSHandler`: Converts text to speech
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+### Troubleshooting
+
+#### Short Audio Capture
+
+If the assistant is only capturing a few seconds of your speech:
+
+- Use the latest version which has improved audio capture parameters
+- Speak clearly and at a consistent volume
+- Try adjusting your microphone settings
+- Make sure there isn't too much background noise
+- If issues persist, try increasing the pause threshold with a custom configuration file
+
+#### False Interruption Detections
+
+If the assistant is detecting interruptions when there aren't any:
+
+- Use the `--no-interruptions` flag to disable interruption detection completely
+- The latest version has improved interruption detection with higher thresholds
+- Try speaking in a quieter environment
+- Make sure your microphone isn't picking up the assistant's audio output
+
+#### Audio Playback Stopping Prematurely
+
+If the assistant stops audio playback when it shouldn't:
+
+- The latest version fixes this issue by only stopping playback when necessary
+- Use the `--no-interruptions` flag if you don't want any interruptions
+- For streaming mode, make sure you're using the latest version which handles audio playback correctly
+
+## Recent Improvements
+
+- **Improved Audio Capture**: Increased phrase time limit and adjusted pause thresholds to allow for longer speech input
+- **Better Interruption Detection**: Raised energy thresholds and added duration checks to avoid false interruptions
+- **Fixed Premature Audio Stopping**: Audio playback now only stops when necessary
+- **Added No-Interruptions Mode**: Use `--no-interruptions` flag to disable interruption detection completely
