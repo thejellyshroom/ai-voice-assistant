@@ -1,0 +1,81 @@
+{
+    "default": {
+        "llm_local": true,
+        "model_name": "llama3.2",
+        "creativity_presets": ["low", "medium", "high", "random"],
+        "local": {
+            "llm_path": "models/llama/llama-3.2-1b-instruct.Q4_K_M.gguf",
+            "chat_format": "llama-3",
+            "n_gpu_layers": "-1",
+            "seed": "42",
+            "n_ctx": "4096",
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 40,
+            "max_tokens": 2048,
+            "frequency_penalty": 0.0,
+            "presence_penalty": 0.0
+        }
+    },
+    "creative": {
+        "llm_local": true,
+        "model_name": "llama3.2",
+        "local": {
+            "llm_path": "models/llama/llama-3.2-1b-instruct.Q4_K_M.gguf",
+            "chat_format": "llama-3",
+            "n_gpu_layers": "-1",
+            "seed": "42",
+            "n_ctx": "4096",
+            "temperature": 1.2,
+            "top_p": 0.95,
+            "top_k": 60,
+            "max_tokens": 2048,
+            "frequency_penalty": 0.3,
+            "presence_penalty": 0.3,
+            "creativity": "high"
+        }
+    },
+    "precise": {
+        "llm_local": true,
+        "model_name": "llama3.2",
+        "local": {
+            "llm_path": "models/llama/llama-3.2-1b-instruct.Q4_K_M.gguf",
+            "chat_format": "llama-3",
+            "n_gpu_layers": "-1",
+            "seed": "42",
+            "n_ctx": "4096",
+            "temperature": 0.3,
+            "top_p": 0.8,
+            "top_k": 20,
+            "max_tokens": 2048,
+            "frequency_penalty": 0.0,
+            "presence_penalty": 0.0,
+            "creativity": "low"
+        }
+    },
+    "balanced": {
+        "llm_local": true,
+        "model_name": "llama3.2",
+        "local": {
+            "llm_path": "models/llama/llama-3.2-1b-instruct.Q4_K_M.gguf",
+            "chat_format": "llama-3",
+            "n_gpu_layers": "-1",
+            "seed": "42",
+            "n_ctx": "4096",
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 40,
+            "max_tokens": 2048,
+            "frequency_penalty": 0.1,
+            "presence_penalty": 0.1,
+            "creativity": "medium"
+        }
+    },
+    "api": {
+        "llm_local": false,
+        "api": {
+            "project_id": "",
+            "api_key": ""
+        }
+    }
+}

@@ -13,6 +13,11 @@ import queue
 
 class VoiceAssistant:
     def __init__(self, 
+                 # Configuration dictionaries
+                 asr_config=None,
+                 tts_config=None,
+                 llm_config=None,
+                 # Legacy parameters - will be used if configs not provided
                  # TTS parameters
                  tts_model="hexgrad/Kokoro-82M", 
                  tts_voice="af_heart", 
@@ -29,6 +34,12 @@ class VoiceAssistant:
         """Initialize the voice assistant with all components.
         
         Args:
+            # Configuration dictionaries
+            asr_config (dict): ASR configuration dictionary
+            tts_config (dict): TTS configuration dictionary
+            llm_config (dict): LLM configuration dictionary
+            
+            # Legacy parameters (used if configs not provided)
             # TTS parameters
             tts_model (str): The TTS model to use (default: "hexgrad/Kokoro-82M")
             tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart")
@@ -45,21 +56,47 @@ class VoiceAssistant:
             top_k (int): LLM top-k sampling (default: 40)
             creativity (str): LLM creativity preset (default: None, choices: low, medium, high, random)
         """
-        # Store TTS configuration parameters
-        self.tts_model = tts_model
-        self.tts_voice = tts_voice
-        self.speech_speed = speech_speed
-        self.expressiveness = expressiveness
-        self.variability = variability
+        # Store configuration dictionaries
+        self.asr_config = asr_config or {}
+        self.tts_config = tts_config or {}
+        self.llm_config = llm_config or {}
         
-        # Store ASR configuration parameters
-        self.transcription_model = transcription_model
+        # TTS configuration parameters (prioritize config dict over legacy params)
+        if 'model_id' in self.tts_config:
+            self.tts_model = self.tts_config['model_id']
+        else:
+            self.tts_model = tts_model
+            
+        if 'kokoro' in self.tts_config:
+            kokoro_conf = self.tts_config['kokoro']
+            self.tts_voice = kokoro_conf.get('voice', tts_voice)
+            self.speech_speed = kokoro_conf.get('speech_speed', speech_speed)
+            self.expressiveness = kokoro_conf.get('expressiveness', expressiveness)
+            self.variability = kokoro_conf.get('variability', variability)
+        else:
+            self.tts_voice = tts_voice
+            self.speech_speed = speech_speed
+            self.expressiveness = expressiveness
+            self.variability = variability
         
-        # Store LLM configuration parameters
-        self.temperature = temperature
-        self.top_p = top_p
-        self.top_k = top_k
-        self.creativity = creativity
+        # ASR configuration parameters
+        if 'model_id' in self.asr_config:
+            self.transcription_model = self.asr_config['model_id']
+        else:
+            self.transcription_model = transcription_model
+        
+        # LLM configuration parameters
+        if 'local' in self.llm_config:
+            local_conf = self.llm_config['local']
+            self.temperature = local_conf.get('temperature', temperature)
+            self.top_p = local_conf.get('top_p', top_p)
+            self.top_k = local_conf.get('top_k', top_k)
+            self.creativity = local_conf.get('creativity', creativity)
+        else:
+            self.temperature = temperature
+            self.top_p = top_p
+            self.top_k = top_k
+            self.creativity = creativity
         
         # Components will be initialized on demand
         self.audio_handler = None
@@ -88,10 +125,10 @@ class VoiceAssistant:
         print(f"Transcription model: {self.transcription_model}")
         
         # Determine device display
-        if self.transcriber.use_faster_whisper:
+        if self.transcriber and hasattr(self.transcriber, 'use_faster_whisper'):
             device = "CUDA" if torch.cuda.is_available() else "CPU"
         else:
-            device = self.transcriber.device
+            device = getattr(self.transcriber, 'device', 'unknown')
         print(f"Device: {device}")
         
         print(f"TTS Model: {self.tts_model}")
@@ -128,7 +165,26 @@ class VoiceAssistant:
         """Load the transcription component."""
         self._unload_component("transcriber")
         try:
-            self.transcriber = Transcriber(model_id=self.transcription_model)
+            # Extract models parameters if specified in config
+            params = {}
+            
+            # Use model_id from config or the class attribute
+            model_id = self.transcription_model
+            
+            # Add model-specific parameters if available in config
+            if self.asr_config:
+                # Extract parameters for faster-whisper if it's in use
+                if 'faster-whisper' in self.asr_config and 'faster-whisper' in model_id:
+                    fw_config = self.asr_config['faster-whisper']
+                    params.update({
+                        'beam_size': fw_config.get('beam_size', 5),
+                        'compute_type': fw_config.get('compute_type', 'float16'),
+                        'device': fw_config.get('device', 'cpu')
+                    })
+                    
+                # Additional params could be added here for other ASR types
+            
+            self.transcriber = Transcriber(model_id=model_id, **params)
             print("Transcriber initialized successfully.")
         except Exception as e:
             print(f"Error initializing transcriber: {str(e)}")
@@ -137,17 +193,40 @@ class VoiceAssistant:
         """Load the LLM handler."""
         print("Loading LLM handler...")
         if self.llm_handler is None:
-            llm_params = {
-                'temperature': self.temperature,
-                'top_p': self.top_p,
-                'top_k': self.top_k
-            }
+            # Build parameters dict for LLM
+            params = {}
             
-            # Add creativity preset if specified
-            if self.creativity:
-                llm_params['creativity'] = self.creativity
+            if 'local' in self.llm_config:
+                # Use values from config
+                local_conf = self.llm_config['local']
+                params = {
+                    'temperature': local_conf.get('temperature', self.temperature),
+                    'top_p': local_conf.get('top_p', self.top_p),
+                    'top_k': local_conf.get('top_k', self.top_k),
+                    'frequency_penalty': local_conf.get('frequency_penalty', 0.0),
+                    'presence_penalty': local_conf.get('presence_penalty', 0.0)
+                }
                 
-            self.llm_handler = LLMHandler(**llm_params)
+                # Set model name if available
+                if 'model_name' in self.llm_config:
+                    params['model_name'] = self.llm_config['model_name']
+                
+                # Add creativity preset if specified
+                if 'creativity' in local_conf:
+                    params['creativity'] = local_conf['creativity']
+            else:
+                # Use instance variables
+                params = {
+                    'temperature': self.temperature,
+                    'top_p': self.top_p,
+                    'top_k': self.top_k
+                }
+                
+                # Add creativity preset if specified
+                if self.creativity:
+                    params['creativity'] = self.creativity
+                
+            self.llm_handler = LLMHandler(**params)
         
     def load_tts_handler(self):
         """Load the TTS handler."""
@@ -155,18 +234,35 @@ class VoiceAssistant:
         self._unload_component("tts_handler")
         
         try:
-            print(f"Initializing TTS with model={self.tts_model}, voice={self.tts_voice}, speed={self.speech_speed}")
-            self.tts_handler = TTSHandler(
-                model_id=self.tts_model,
-                voice=self.tts_voice,
-                speech_speed=self.speech_speed
-            )
+            # Prepare TTS parameters from config or legacy params
+            tts_params = {
+                'model_id': self.tts_model,
+                'voice': self.tts_voice,
+                'speech_speed': self.speech_speed
+            }
+            
+            # Extract additional parameters from config if available
+            if 'kokoro' in self.tts_config:
+                kokoro_conf = self.tts_config['kokoro']
+                if 'sample_rate' in kokoro_conf:
+                    tts_params['sample_rate'] = kokoro_conf['sample_rate']
+                
+            print(f"Initializing TTS with: {tts_params}")
+            self.tts_handler = TTSHandler(**tts_params)
             
             # Set voice characteristics
-            self.tts_handler.set_characteristics(
-                expressiveness=self.expressiveness,
-                variability=self.variability,
-            )
+            char_params = {
+                'expressiveness': self.expressiveness,
+                'variability': self.variability,
+            }
+            
+            if 'kokoro' in self.tts_config:
+                kokoro_conf = self.tts_config['kokoro']
+                if 'available_voices' in kokoro_conf:
+                    # Update available voices if provided in config
+                    self.tts_handler.available_voices = kokoro_conf['available_voices']
+            
+            self.tts_handler.set_characteristics(**char_params)
             
             self.tts_enabled = True
             print("TTS handler loaded successfully.")

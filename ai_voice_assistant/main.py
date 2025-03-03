@@ -59,162 +59,175 @@ def load_config(config_file):
         print(f"Error loading configuration file {config_file}: {str(e)}")
         return {}
 
+def list_config_presets(config_file, label="presets"):
+    """Print available configuration presets from a config file.
+    
+    Args:
+        config_file (str): Path to configuration file
+        label (str): Label for the list output
+    """
+    try:
+        config = load_config(config_file)
+        if config:
+            print(f"\nAvailable {label}:")
+            for preset in config.keys():
+                print(f"  - {preset}")
+            print()
+        else:
+            print(f"No {label} found in {config_file}")
+    except Exception as e:
+        print(f"Error listing presets from {config_file}: {str(e)}")
+
+def get_default_config_paths():
+    """Get default paths for config files."""
+    # Get the directory of the current file
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    return {
+        'asr': os.path.join(base_dir, 'conf_asr.json'),
+        'tts': os.path.join(base_dir, 'conf_tts.json'),
+        'llm': os.path.join(base_dir, 'conf_llm.json')
+    }
+
 def main():
+    # Get default config paths
+    default_config_paths = get_default_config_paths()
+    
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='AI Voice Assistant')
     parser.add_argument('--fixed-duration', type=int, help='Use fixed duration recording instead of dynamic listening')
     parser.add_argument('--timeout', type=int, default=10, help='Maximum seconds to wait for speech before giving up')
     parser.add_argument('--phrase-limit', type=int, default=60, help='Maximum seconds for a single phrase')
 
-    # TTS parameters
-    parser.add_argument('--tts-model', type=str, default="hexgrad/Kokoro-82M", 
-                        help='TTS model to use (default: hexgrad/Kokoro-82M)')
-    parser.add_argument('--tts-voice', type=str, default="af_heart", 
-                        help='Voice to use for Kokoro TTS (default: af_heart)')
-    parser.add_argument('--speech-speed', type=float, default=1.3, 
-                        help='Speed factor for speech (default: 1.3, range: 0.5-2.0)')
-    parser.add_argument('--expressiveness', type=float, default=1.0,
-                        help='Voice expressiveness (default: 1.0, range: 0.0-2.0)')
-    parser.add_argument('--variability', type=float, default=0.3,
-                        help='Speech variability (default: 0.3, range: 0.0-1.0)')
-                        
-    # LLM parameters
-    parser.add_argument('--temperature', type=float, default=0.7,
-                        help='LLM temperature (default: 0.7, range: 0.0-2.0)')
-    parser.add_argument('--top-p', type=float, default=0.9,
-                        help='LLM top-p sampling (default: 0.9, range: 0.0-1.0)')
-    parser.add_argument('--top-k', type=int, default=40,
-                        help='LLM top-k sampling (default: 40)')
-    parser.add_argument('--creativity', type=str, default="high", choices=LLM_CREATIVITY_PRESETS,
-                        help='LLM creativity preset (default: High)')
-                        
-    # List options
-    parser.add_argument('--list-voices', action='store_true', help='List all available Kokoro voices and exit')
-    parser.add_argument('--list-creativity-presets', action='store_true', help='List all available LLM creativity presets and exit')
+    # Configuration file options
+    parser.add_argument('--config', type=str, help='Path to global configuration file')
+    parser.add_argument('--asr-config', type=str, default=default_config_paths['asr'], help='Path to ASR configuration file')
+    parser.add_argument('--tts-config', type=str, default=default_config_paths['tts'], help='Path to TTS configuration file')
+    parser.add_argument('--llm-config', type=str, default=default_config_paths['llm'], help='Path to LLM configuration file')
     
-    # Add transcription model options
-    parser.add_argument('--transcription-model', type=str, default="faster-whisper-small", 
-                        choices=list(TRANSCRIPTION_MODELS.keys()),
-                        help='Transcription model to use (default: faster-whisper-small)')
-    parser.add_argument('--list-transcription-models', action='store_true', 
-                        help='List all available transcription models and exit')
+    # Preset selection options
+    parser.add_argument('--asr-preset', type=str, default='default', help='ASR preset to use')
+    parser.add_argument('--tts-preset', type=str, default='default', help='TTS preset to use')
+    parser.add_argument('--llm-preset', type=str, default='default', help='LLM preset to use')
     
+    # List available presets
+    parser.add_argument('--list-asr-presets', action='store_true', help='List available ASR presets')
+    parser.add_argument('--list-tts-presets', action='store_true', help='List available TTS presets')
+    parser.add_argument('--list-llm-presets', action='store_true', help='List available LLM presets')
     
-    # Add configuration file options
-    parser.add_argument('--config', type=str, help='Path to configuration file')
-    parser.add_argument('--asr-config', type=str, help='Path to ASR configuration file')
-    parser.add_argument('--tts-config', type=str, help='Path to TTS configuration file')
-    parser.add_argument('--llm-config', type=str, help='Path to LLM configuration file')
+    # Override options for specific parameters
+    parser.add_argument('--tts-voice', type=str, help='Override voice for TTS')
+    parser.add_argument('--speech-speed', type=float, help='Override speed factor for speech')
+    parser.add_argument('--creativity', type=str, help='Override LLM creativity preset')
+    parser.add_argument('--transcription-model', type=str, help='Override transcription model')
     
     args = parser.parse_args()
     
-    # If --list-voices is specified, print available voices and exit
-    if args.list_voices:
-        list_available_voices()
+    # List presets if requested
+    if args.list_asr_presets:
+        list_config_presets(args.asr_config, "ASR presets")
         return
     
-    # If --list-transcription-models is specified, print available models and exit
-    if args.list_transcription_models:
-        list_available_transcription_models()
-        return
-        
-    # If --list-creativity-presets is specified, print available presets and exit
-    if args.list_creativity_presets:
-        list_llm_creativity_presets()
+    if args.list_tts_presets:
+        list_config_presets(args.tts_config, "TTS presets")
         return
     
-    # Load configuration from files if specified
-    config = {}
-    if args.config and os.path.exists(args.config):
-        config = load_config(args.config)
+    if args.list_llm_presets:
+        list_config_presets(args.llm_config, "LLM presets")
+        return
     
-    # Load component-specific configurations
+    # Load configurations
+    # Start with empty configs
     asr_config = {}
-    if args.asr_config and os.path.exists(args.asr_config):
-        asr_config = load_config(args.asr_config)
-    
     tts_config = {}
-    if args.tts_config and os.path.exists(args.tts_config):
-        tts_config = load_config(args.tts_config)
-    
     llm_config = {}
-    if args.llm_config and os.path.exists(args.llm_config):
-        llm_config = load_config(args.llm_config)
     
-    # Merge configurations with command line arguments taking precedence
-    tts_model = args.tts_model
-    tts_voice = args.tts_voice
-    speech_speed = args.speech_speed
-    expressiveness = args.expressiveness
-    variability = args.variability
+    # Load from config files
+    if os.path.exists(args.asr_config):
+        asr_conf_all = load_config(args.asr_config)
+        if args.asr_preset in asr_conf_all:
+            asr_config = asr_conf_all[args.asr_preset]
+        else:
+            print(f"Warning: ASR preset '{args.asr_preset}' not found. Using 'default' preset.")
+            asr_config = asr_conf_all.get('default', {})
     
-    # LLM parameters
-    temperature = args.temperature
-    top_p = args.top_p
-    top_k = args.top_k
-    creativity = args.creativity
+    if os.path.exists(args.tts_config):
+        tts_conf_all = load_config(args.tts_config)
+        if args.tts_preset in tts_conf_all:
+            tts_config = tts_conf_all[args.tts_preset]
+        else:
+            print(f"Warning: TTS preset '{args.tts_preset}' not found. Using 'default' preset.")
+            tts_config = tts_conf_all.get('default', {})
     
-    # Override with config values if available
-    if 'tts_model' in config:
-        tts_model = config.get('tts_model', tts_model)
-    if 'tts_voice' in config:
-        tts_voice = config.get('tts_voice', tts_voice)
-    if 'speech_speed' in config:
-        speech_speed = config.get('speech_speed', speech_speed)
-    if 'expressiveness' in config:
-        expressiveness = config.get('expressiveness', expressiveness)
-    if 'variability' in config:
-        variability = config.get('variability', variability)
+    if os.path.exists(args.llm_config):
+        llm_conf_all = load_config(args.llm_config)
+        if args.llm_preset in llm_conf_all:
+            llm_config = llm_conf_all[args.llm_preset]
+        else:
+            print(f"Warning: LLM preset '{args.llm_preset}' not found. Using 'default' preset.")
+            llm_config = llm_conf_all.get('default', {})
     
-    # Override LLM parameters from config if available
-    if 'temperature' in config:
-        temperature = config.get('temperature', temperature)
-    if 'top_p' in config:
-        top_p = config.get('top_p', top_p)
-    if 'top_k' in config:
-        top_k = config.get('top_k', top_k)
-    if 'creativity' in config:
-        creativity = config.get('creativity', creativity)
+    # Merge command line arguments with configs
+    # Command line args override config values
     
-    # Check if the specified voice is valid
-    all_voices = [voice for voices in KOKORO_VOICES.values() for voice in voices]
-    if tts_voice not in all_voices:
-        print(f"Warning: '{tts_voice}' is not a recognized Kokoro voice.")
-        print("Using default voice 'af_heart' instead.")
-        print("Use --list-voices to see all available voices.")
-        tts_voice = "af_heart"
+    # Override TTS config with command line args
+    if args.tts_voice:
+        if 'kokoro' in tts_config:
+            tts_config['kokoro']['voice'] = args.tts_voice
+        else:
+            tts_config['voice'] = args.tts_voice
     
-    # Check if the specified creativity preset is valid
-    if creativity and creativity not in LLM_CREATIVITY_PRESETS:
-        print(f"Warning: '{creativity}' is not a recognized creativity preset.")
-        print("Not using any preset.")
-        print("Use --list-creativity-presets to see all available presets.")
-        creativity = None
+    if args.speech_speed:
+        if 'kokoro' in tts_config:
+            tts_config['kokoro']['speech_speed'] = args.speech_speed
+        else:
+            tts_config['speech_speed'] = args.speech_speed
     
-    # Get the transcription model ID
-    transcription_model_name = args.transcription_model
-    if 'transcription_model' in config:
-        transcription_model_name = config.get('transcription_model', transcription_model_name)
+    # Override ASR config with command line args
+    if args.transcription_model:
+        asr_config['model_id'] = args.transcription_model
     
-    transcription_model = TRANSCRIPTION_MODELS[transcription_model_name]
-    print(f"Using transcription model: {transcription_model_name} ({transcription_model})")
+    # Override LLM config with command line args
+    if args.creativity:
+        if 'local' in llm_config:
+            llm_config['local']['creativity'] = args.creativity
+        else:
+            llm_config['creativity'] = args.creativity
+    
+    # Prepare parameters for VoiceAssistant
+    assistant_params = {}
+    
+    # Add TTS parameters
+    if 'model_id' in tts_config:
+        assistant_params['tts_model'] = tts_config['model_id']
+    
+    if 'kokoro' in tts_config:
+        kokoro_conf = tts_config['kokoro']
+        assistant_params['tts_voice'] = kokoro_conf.get('voice', 'af_heart')
+        assistant_params['speech_speed'] = kokoro_conf.get('speech_speed', 1.3)
+        assistant_params['expressiveness'] = kokoro_conf.get('expressiveness', 1.0)
+        assistant_params['variability'] = kokoro_conf.get('variability', 0.2)
+    
+    # Add ASR parameters
+    if 'model_id' in asr_config:
+        assistant_params['transcription_model'] = asr_config['model_id']
+    
+    # Add LLM parameters
+    if 'local' in llm_config:
+        local_conf = llm_config['local']
+        assistant_params['temperature'] = local_conf.get('temperature', 0.7)
+        assistant_params['top_p'] = local_conf.get('top_p', 0.9)
+        assistant_params['top_k'] = local_conf.get('top_k', 40)
+        if 'creativity' in local_conf:
+            assistant_params['creativity'] = local_conf['creativity']
+    
+    # Provide configs to VoiceAssistant
+    assistant_params['asr_config'] = asr_config
+    assistant_params['tts_config'] = tts_config
+    assistant_params['llm_config'] = llm_config
     
     # Initialize the voice assistant
-    assistant = VoiceAssistant(
-        # TTS parameters
-        tts_model=tts_model,
-        tts_voice=tts_voice,
-        speech_speed=speech_speed,
-        expressiveness=expressiveness,
-        variability=variability,
-        # ASR parameters
-        transcription_model=transcription_model,
-        # LLM parameters
-        temperature=temperature,
-        top_p=top_p,
-        top_k=top_k,
-        creativity=creativity
-    )
+    assistant = VoiceAssistant(**assistant_params)
 
     # Start the interaction loop
     try:

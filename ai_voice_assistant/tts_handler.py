@@ -11,11 +11,12 @@ import time
 
 
 class TTSHandler:
-    def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_heart", speech_speed=1.3):
+    def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_heart", speech_speed=1.3, sample_rate=24000):
         self.model_id = model_id
         self.voice = voice
         self.base_speech_speed = max(0.5, min(2.0, speech_speed))  # Clamp between 0.5 and 2.0
         self.speech_speed = self.base_speech_speed
+        self.sample_rate = sample_rate
         
         # Voice characteristics
         self.available_voices = self._get_available_voices()
@@ -27,6 +28,7 @@ class TTSHandler:
         
         print(f"Initializing Kokoro TTS with voice: {voice}")
         print(f"Base speech speed set to: {self.base_speech_speed}x")
+        print(f"Sample rate set to: {self.sample_rate}")
         print(f"Speech characteristics: {self.speech_characteristics}")
         
         # Determine language code from voice prefix
@@ -67,11 +69,11 @@ class TTSHandler:
         
     def _get_available_voices(self):
         """Get list of available Kokoro voices."""
-        # These are example voices - the actual list will depend on your Kokoro installation
-        # Each voice ID has a language prefix (a=Arabic, af=Afrikaans, e=English, etc.)
+        # These are common Kokoro voices - the actual list will be overridden by config if available
         return [
-            "af_heart", "af_nicole", "af_spirit", "e_asif", "e_cassie", 
-            "e_emma", "e_jack", "e_jeremy", "e_josh", "e_lucy", "e_maria"
+            "af_heart", "af_nicole", "af_spirit", "af_alloy", "af_aoede", "af_bella", "af_jessica", 
+            "af_kore", "af_nova", "af_river", "af_sarah", "af_sky",
+            "e_asif", "e_cassie", "e_emma", "e_jack", "e_jeremy", "e_josh", "e_lucy", "e_maria"
         ]
 
         
@@ -93,13 +95,14 @@ class TTSHandler:
         
         try:
             if not text:
-                return np.zeros(0, dtype=np.float32), 24000
+                return np.zeros(0, dtype=np.float32), self.sample_rate
             
             # For very long text, split into sentences and process separately
             if len(text) > 200:
                 sentences = self._split_into_sentences(text)
                 audio_segments = []
-                sample_rate = 24000
+                sample_rate = self.sample_rate
+                silence_duration = kwargs.get('sentence_silence', 0.2)  # Get from kwargs or use default
                 
                 for sentence in sentences:
                     if not sentence.strip():
@@ -116,8 +119,8 @@ class TTSHandler:
                             
                         if len(audio_segment) > 0:
                             audio_segments.append(audio_segment)
-                            # Add a small silence between sentences (0.2 seconds)
-                            silence = np.zeros(int(0.2 * sample_rate), dtype=np.float32)
+                            # Add a small silence between sentences
+                            silence = np.zeros(int(silence_duration * sample_rate), dtype=np.float32)
                             audio_segments.append(silence)
                     except Exception as e:
                         print(f"Error synthesizing sentence: {str(e)}")
@@ -144,14 +147,14 @@ class TTSHandler:
                 audio = self._synthesize_single(text)
                 if audio is None:
                     print(f"Warning: Got None audio for text: {text}")
-                    return np.zeros(0, dtype=np.float32), 24000
-                return audio, 24000
+                    return np.zeros(0, dtype=np.float32), self.sample_rate
+                return audio, self.sample_rate
         except Exception as e:
             # Catch-all for any unexpected errors
             print(f"Unexpected error in speech synthesis: {str(e)}")
             import traceback
             traceback.print_exc()
-            return np.zeros(0, dtype=np.float32), 24000
+            return np.zeros(0, dtype=np.float32), self.sample_rate
         finally:
             # Restore original characteristics if they were temporarily overridden
             if kwargs:

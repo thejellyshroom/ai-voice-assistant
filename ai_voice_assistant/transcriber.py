@@ -6,37 +6,55 @@ import numpy as np
 import time
 
 class Transcriber:
-    def __init__(self, model_id="Systran/faster-whisper-small"):
+    def __init__(self, model_id="Systran/faster-whisper-small", **kwargs):
         """Initialize the transcriber with Whisper model.
         
         Args:
             model_id (str): Model identifier (default: "Systran/faster-whisper-small")
+            **kwargs: Additional model parameters
+                - beam_size (int): Beam size for faster-whisper (default: 5)
+                - compute_type (str): Compute type for faster-whisper (default: "float16")
+                - device (str): Device to use (default: "cuda" if available, else "cpu")
+                - use_safetensors (bool): Whether to use safetensors for transformers (default: True)
+                - low_cpu_mem_usage (bool): Low CPU memory usage for transformers (default: True)
         """
         self.model_id = model_id
         
+        # Extract parameters from kwargs with defaults
+        beam_size = kwargs.get('beam_size', 5)
+        compute_type = kwargs.get('compute_type', "float16" if torch.cuda.is_available() else "int8")
+        device = kwargs.get('device', "cuda" if torch.cuda.is_available() else "cpu")
+        use_safetensors = kwargs.get('use_safetensors', True)
+        low_cpu_mem_usage = kwargs.get('low_cpu_mem_usage', True)
+        
         # Check if we're using faster-whisper or transformers
-        self.use_faster_whisper = "Systran/faster-whisper" in model_id
+        self.use_faster_whisper = "faster-whisper" in model_id
         
         if self.use_faster_whisper:
-            # Set compute type based on available hardware
-            compute_type = "float16" if torch.cuda.is_available() else "int8"
-            
-            # Handle the small model specifically
-            if model_id == "Systran/faster-whisper-small":
-                # For the small model, we use "small" directly
-                print("Using faster-whisper small model...")
-                model_name = "small"
-            else:
-                model_name = model_id
-            
             # Initialize faster-whisper model
             try:
+                print(f"Initializing faster-whisper with model={model_id}, device={device}, compute_type={compute_type}, beam_size={beam_size}")
+                
+                # For the small model, we use "small" directly
+                if model_id == "Systran/faster-whisper-small":
+                    model_name = "small"
+                elif model_id == "Systran/faster-whisper-medium":
+                    model_name = "medium"
+                elif model_id == "h2oai/faster-whisper-large-v3-turbo":
+                    model_name = "large-v3-turbo"
+                else:
+                    model_name = model_id
+                
                 self.model = WhisperModel(
                     model_name,
-                    device="cuda" if torch.cuda.is_available() else "cpu",
-                    compute_type=compute_type
+                    device=device,
+                    compute_type=compute_type,
+                    download_root=kwargs.get('download_root', 'models/faster-whisper')
                 )
                 print(f"Successfully loaded model: {model_name}")
+                
+                # Store beam size for transcription
+                self.beam_size = beam_size
             except Exception as e:
                 print(f"Error loading model: {e}")
                 raise
@@ -49,11 +67,12 @@ class Transcriber:
             self.torch_dtype = torch.float16
 
             # Load model and processor
+            print(f"Initializing transformers with model={model_id}, device={self.device}")
             self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
                 model_id,
                 torch_dtype=self.torch_dtype,
-                low_cpu_mem_usage=True,
-                use_safetensors=True
+                low_cpu_mem_usage=low_cpu_mem_usage,
+                use_safetensors=use_safetensors
             )
             self.model.to(self.device)
 
@@ -90,7 +109,7 @@ class Transcriber:
             
             if self.use_faster_whisper:
                 # Use faster-whisper for transcription
-                segments, _ = self.model.transcribe(audio_file, beam_size=5)
+                segments, _ = self.model.transcribe(audio_file, beam_size=self.beam_size)
                 text = " ".join([segment.text for segment in segments])
                 
                 end_time = time.time()
