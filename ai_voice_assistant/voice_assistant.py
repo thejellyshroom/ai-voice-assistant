@@ -68,7 +68,7 @@ class VoiceAssistant:
         print(f"Transcription model: {self.transcription_model}")
         
         # Determine device display
-        if self.transcriber and hasattr(self.transcriber, 'use_faster_whisper'):
+        if self.transcriber and hasattr(self.transcriber, 'device'):
             device = "CUDA" if torch.cuda.is_available() else "CPU"
         else:
             device = getattr(self.transcriber, 'device', 'unknown')
@@ -109,16 +109,12 @@ class VoiceAssistant:
         """Load the transcription component."""
         self._unload_component("transcriber")
         try:
-            # Extract models parameters if specified in config
-            params = {}
-            
             # Use model_id from config or the class attribute
             model_id = self.transcription_model
-        
-                                
-            print(f"Initializing transcriber with model: {model_id} and params: {params}")
-            self.transcriber = Transcriber(config=self.asr_config, **params)
+            print(f"Initializing transcriber with model: {model_id}")
+            self.transcriber = Transcriber(config=self.asr_config)
             print("Transcriber initialized successfully.")
+
         except Exception as e:
             print(f"Error initializing transcriber: {str(e)}")
             import traceback

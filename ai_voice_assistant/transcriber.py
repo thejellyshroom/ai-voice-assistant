@@ -6,7 +6,7 @@ import numpy as np
 import time
 
 class Transcriber:
-    def __init__(self, config, **kwargs):
+    def __init__(self, config):
 
         config = config.get("faster-whisper", {})
         self.model_id = config.get("model_id", "Systran/faster-whisper-small")
@@ -17,12 +17,11 @@ class Transcriber:
         self.device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         
         # Set download_root for model files
-        self.download_root = kwargs.get("download_root", os.path.join(os.path.expanduser("~"), ".cache", "faster_whisper"))
+        self.download_root = config.get("download_root")
         
         # Initialize faster-whisper model
         try:
             print(f"Initializing faster-whisper with model={self.model_id}, device={self.device}, compute_type={self.compute_type}, beam_size={self.beam_size}")
-            print(f"Model files will be stored in: {self.download_root}")
             
             self.model = WhisperModel(
                 self.model_id,
