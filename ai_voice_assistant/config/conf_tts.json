@@ -16,32 +16,5 @@
       "variability": 0.2,
       "sentence_silence": 0.2
     }
-  },
-  "relaxed": {
-    "tts_name": "kokoro",
-    "model_id": "hexgrad/Kokoro-82M",
-    "kokoro": {
-      "voice": "e_emma",
-      "device": "cpu",
-      "speech_speed": 1.2,
-      "sample_rate": 24000,
-      "expressiveness": 1.3,
-      "variability": 0.3,
-      "sentence_silence": 0.3
-    }
-  },
-  "formal": {
-    "tts_name": "kokoro",
-    "model_id": "hexgrad/Kokoro-82M",
-    "kokoro": {
-      "voice": "e_asif",
-      "device": "cpu",
-      "speech_speed": 1.1,
-      "sample_rate": 24000,
-      "expressiveness": 0.8,
-      "variability": 0.15,
-      "sentence_silence": 0.2
-    }
   }
 }
-  

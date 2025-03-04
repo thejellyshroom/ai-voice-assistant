@@ -70,12 +70,5 @@
             "presence_penalty": 0.1,
             "creativity": "medium"
         }
-    },
-    "api": {
-        "llm_local": false,
-        "api": {
-            "project_id": "",
-            "api_key": ""
-        }
     }
 }
