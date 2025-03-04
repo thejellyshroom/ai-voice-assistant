@@ -1,5 +1,5 @@
 import torch
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+# from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 import os
 from faster_whisper import WhisperModel
 import numpy as np
@@ -60,33 +60,33 @@ class Transcriber:
                 raise
             
             self.pipe = None  # Not used with faster-whisper
-        else:
-            # Set device (MPS for MacOS, CUDA for NVIDIA, or CPU)
-            self.device = "mps" if torch.backends.mps.is_available() else \
-                         "cuda:0" if torch.cuda.is_available() else "cpu"
-            self.torch_dtype = torch.float16
+        # else:
+        #     # Set device (MPS for MacOS, CUDA for NVIDIA, or CPU)
+        #     self.device = "mps" if torch.backends.mps.is_available() else \
+        #                  "cuda:0" if torch.cuda.is_available() else "cpu"
+        #     self.torch_dtype = torch.float16
 
-            # Load model and processor
-            print(f"Initializing transformers with model={model_id}, device={self.device}")
-            self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                model_id,
-                torch_dtype=self.torch_dtype,
-                low_cpu_mem_usage=low_cpu_mem_usage,
-                use_safetensors=use_safetensors
-            )
-            self.model.to(self.device)
+        #     # Load model and processor
+        #     print(f"Initializing transformers with model={model_id}, device={self.device}")
+        #     self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
+        #         model_id,
+        #         torch_dtype=self.torch_dtype,
+        #         low_cpu_mem_usage=low_cpu_mem_usage,
+        #         use_safetensors=use_safetensors
+        #     )
+        #     self.model.to(self.device)
 
-            self.processor = AutoProcessor.from_pretrained(model_id)
+        #     self.processor = AutoProcessor.from_pretrained(model_id)
 
-            # Create pipeline
-            self.pipe = pipeline(
-                "automatic-speech-recognition",
-                model=self.model,
-                tokenizer=self.processor.tokenizer,
-                feature_extractor=self.processor.feature_extractor,
-                torch_dtype=self.torch_dtype,
-                device=self.device,
-            )
+        #     # Create pipeline
+        #     self.pipe = pipeline(
+        #         "automatic-speech-recognition",
+        #         model=self.model,
+        #         tokenizer=self.processor.tokenizer,
+        #         feature_extractor=self.processor.feature_extractor,
+        #         torch_dtype=self.torch_dtype,
+        #         device=self.device,
+        #     )
 
     def transcribe(self, audio_file):
         """Transcribe audio file to text.

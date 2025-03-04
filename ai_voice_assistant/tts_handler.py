@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-from transformers import pipeline
 from kokoro import KPipeline
 
 import logging
@@ -11,28 +10,29 @@ import time
 
 
 class TTSHandler:
-    def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_heart", speech_speed=1.3, sample_rate=24000):
-        self.model_id = model_id
-        self.voice = voice
-        self.base_speech_speed = max(0.5, min(2.0, speech_speed))  # Clamp between 0.5 and 2.0
-        self.speech_speed = self.base_speech_speed
-        self.sample_rate = sample_rate
+    def __init__(self, config=None):
+        config = config.get("kokoro", {})
+        self.voice = config.get("voice")
+        self.base_speech_speed = max(0.5, min(2.0, config.get('speed', 1.0)))  # Clamp between 0.5 and 2.0
+        self.speed = self.base_speech_speed
+        self.sample_rate = config.get('sample_rate', 24000)
+        self.device = config.get('device', 'cpu')
         
         # Voice characteristics
         self.available_voices = self._get_available_voices()
         self.speech_characteristics = {
             "expressiveness": 1.0,  # 0.0-2.0, how expressive the voice is
             "variability": 0.2,     # 0.0-1.0, how much the speech speed varies
-            "character": voice      # Voice character/persona
+            "character": self.voice      # Voice character/persona
         }
         
-        print(f"Initializing Kokoro TTS with voice: {voice}")
+        print(f"Initializing Kokoro TTS with voice: {self.voice}")
         print(f"Base speech speed set to: {self.base_speech_speed}x")
         print(f"Sample rate set to: {self.sample_rate}")
         print(f"Speech characteristics: {self.speech_characteristics}")
         
         # Determine language code from voice prefix
-        lang_code = voice[0]  # First letter of voice ID determines language
+        lang_code = self.voice[0]  # First letter of voice ID determines language
         self.kokoro_pipeline = KPipeline(lang_code=lang_code)
         
     def set_characteristics(self, **kwargs):
@@ -170,12 +170,12 @@ class TTSHandler:
             numpy.ndarray: Audio array
         """
         try:
-            print(f"Synthesizing with speed: {self.speech_speed:.2f}x, voice: {self.voice}")
+            print(f"Synthesizing with speed: {self.speed:.2f}x, voice: {self.voice}")
             
             generator = self.kokoro_pipeline(
                 text,
                 voice=self.voice,
-                speed=self.speech_speed,
+                speed=self.speed,
                 split_pattern=r'\n+'
             )
             

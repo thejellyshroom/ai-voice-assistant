@@ -156,29 +156,10 @@ class VoiceAssistant:
                 'voice': self.tts_voice,
                 'speech_speed': self.speech_speed
             }
-            
-            # Extract additional parameters from config if available
-            if 'kokoro' in self.tts_config:
-                kokoro_conf = self.tts_config['kokoro']
-                if 'sample_rate' in kokoro_conf:
-                    tts_params['sample_rate'] = kokoro_conf['sample_rate']
                 
             print(f"Initializing TTS with: {tts_params}")
-            self.tts_handler = TTSHandler(**tts_params)
-            
-            # Set voice characteristics
-            char_params = {
-                'expressiveness': self.expressiveness,
-                'variability': self.variability,
-            }
-            
-            if 'kokoro' in self.tts_config:
-                kokoro_conf = self.tts_config['kokoro']
-                if 'available_voices' in kokoro_conf:
-                    # Update available voices if provided in config
-                    self.tts_handler.available_voices = kokoro_conf['available_voices']
-            
-            self.tts_handler.set_characteristics(**char_params)
+            self.tts_handler = TTSHandler(self.tts_config)
+
             
             self.tts_enabled = True
             print("TTS handler loaded successfully.")
