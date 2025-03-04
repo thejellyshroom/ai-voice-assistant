@@ -27,7 +27,7 @@ class VoiceAssistant:
             
         kokoro_conf = self.tts_config.get('kokoro', {})
         self.tts_voice = kokoro_conf.get('voice')
-        self.speech_speed = kokoro_conf.get('speech_speed')
+        self.speed = kokoro_conf.get('speed')
         self.expressiveness = kokoro_conf.get('expressiveness')
         self.variability = kokoro_conf.get('variability')
         
@@ -76,7 +76,7 @@ class VoiceAssistant:
         
         print(f"TTS Model: {self.tts_model}")
         print(f"TTS Voice: {self.tts_voice}")
-        print(f"Speech Speed: {self.speech_speed}x")
+        print(f"Speech Speed: {self.speed}x")
         print("Press Ctrl+C to exit")
     
     def _unload_component(self, component_name):
@@ -114,22 +114,10 @@ class VoiceAssistant:
             
             # Use model_id from config or the class attribute
             model_id = self.transcription_model
-            
-            # Add model-specific parameters if available in config
-            if self.asr_config:
-                # Extract parameters for faster-whisper if it's in use
-                if 'faster-whisper' in self.asr_config and 'faster-whisper' in model_id:
-                    fw_config = self.asr_config['faster-whisper']
-                    params.update({
-                        'beam_size': fw_config.get('beam_size', 5),
-                        'compute_type': fw_config.get('compute_type', 'float16'),
-                        'device': fw_config.get('device', 'cpu')
-                    })
-                    
-                # Additional params could be added here for other ASR types
-            
+        
+                                
             print(f"Initializing transcriber with model: {model_id} and params: {params}")
-            self.transcriber = Transcriber(model_id=model_id, **params)
+            self.transcriber = Transcriber(config=self.asr_config, **params)
             print("Transcriber initialized successfully.")
         except Exception as e:
             print(f"Error initializing transcriber: {str(e)}")
@@ -154,7 +142,7 @@ class VoiceAssistant:
             tts_params = {
                 'model_id': self.tts_model,
                 'voice': self.tts_voice,
-                'speech_speed': self.speech_speed
+                'speed': self.speed
             }
                 
             print(f"Initializing TTS with: {tts_params}")

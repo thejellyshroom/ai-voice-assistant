@@ -6,87 +6,39 @@ import numpy as np
 import time
 
 class Transcriber:
-    def __init__(self, model_id="Systran/faster-whisper-small", **kwargs):
-        """Initialize the transcriber with Whisper model.
-        
-        Args:
-            model_id (str): Model identifier (default: "Systran/faster-whisper-small")
-            **kwargs: Additional model parameters
-                - beam_size (int): Beam size for faster-whisper (default: 5)
-                - compute_type (str): Compute type for faster-whisper (default: "float16")
-                - device (str): Device to use (default: "cuda" if available, else "cpu")
-                - use_safetensors (bool): Whether to use safetensors for transformers (default: True)
-                - low_cpu_mem_usage (bool): Low CPU memory usage for transformers (default: True)
-        """
-        self.model_id = model_id
+    def __init__(self, config, **kwargs):
+
+        config = config.get("faster-whisper", {})
+        self.model_id = config.get("model_id", "Systran/faster-whisper-small")
         
         # Extract parameters from kwargs with defaults
-        beam_size = kwargs.get('beam_size', 5)
-        compute_type = kwargs.get('compute_type', "float16" if torch.cuda.is_available() else "int8")
-        device = kwargs.get('device', "cuda" if torch.cuda.is_available() else "cpu")
-        use_safetensors = kwargs.get('use_safetensors', True)
-        low_cpu_mem_usage = kwargs.get('low_cpu_mem_usage', True)
+        self.beam_size = config.get("beam_size", 5)
+        self.compute_type = config.get("compute_type", "int8")  # Changed to int8 for better compatibility
+        self.device = config.get("device", "cuda" if torch.cuda.is_available() else "cpu")
         
-        # Check if we're using faster-whisper or transformers
-        self.use_faster_whisper = "faster-whisper" in model_id
+        # Set download_root for model files
+        self.download_root = kwargs.get("download_root", os.path.join(os.path.expanduser("~"), ".cache", "faster_whisper"))
         
-        if self.use_faster_whisper:
-            # Initialize faster-whisper model
-            try:
-                print(f"Initializing faster-whisper with model={model_id}, device={device}, compute_type={compute_type}, beam_size={beam_size}")
-                
-                # For the small model, we use "small" directly
-                if model_id == "Systran/faster-whisper-small":
-                    model_name = "small"
-                elif model_id == "Systran/faster-whisper-medium":
-                    model_name = "medium"
-                elif model_id == "h2oai/faster-whisper-large-v3-turbo":
-                    model_name = "large-v3-turbo"
-                else:
-                    model_name = model_id
-                
-                self.model = WhisperModel(
-                    model_name,
-                    device=device,
-                    compute_type=compute_type,
-                    download_root=kwargs.get('download_root', 'models/faster-whisper')
-                )
-                print(f"Successfully loaded model: {model_name}")
-                
-                # Store beam size for transcription
-                self.beam_size = beam_size
-            except Exception as e:
-                print(f"Error loading model: {e}")
-                raise
+        # Initialize faster-whisper model
+        try:
+            print(f"Initializing faster-whisper with model={self.model_id}, device={self.device}, compute_type={self.compute_type}, beam_size={self.beam_size}")
+            print(f"Model files will be stored in: {self.download_root}")
             
-            self.pipe = None  # Not used with faster-whisper
-        # else:
-        #     # Set device (MPS for MacOS, CUDA for NVIDIA, or CPU)
-        #     self.device = "mps" if torch.backends.mps.is_available() else \
-        #                  "cuda:0" if torch.cuda.is_available() else "cpu"
-        #     self.torch_dtype = torch.float16
-
-        #     # Load model and processor
-        #     print(f"Initializing transformers with model={model_id}, device={self.device}")
-        #     self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
-        #         model_id,
-        #         torch_dtype=self.torch_dtype,
-        #         low_cpu_mem_usage=low_cpu_mem_usage,
-        #         use_safetensors=use_safetensors
-        #     )
-        #     self.model.to(self.device)
-
-        #     self.processor = AutoProcessor.from_pretrained(model_id)
-
-        #     # Create pipeline
-        #     self.pipe = pipeline(
-        #         "automatic-speech-recognition",
-        #         model=self.model,
-        #         tokenizer=self.processor.tokenizer,
-        #         feature_extractor=self.processor.feature_extractor,
-        #         torch_dtype=self.torch_dtype,
-        #         device=self.device,
-        #     )
+            self.model = WhisperModel(
+                self.model_id,
+                device=self.device,
+                compute_type=self.compute_type,
+                download_root=self.download_root
+            )
+            print(f"Successfully loaded model: {self.model_id}")
+            
+            # Store beam size for transcription
+            self.beam_size = self.beam_size
+        except Exception as e:
+            print(f"Error loading model: {e}")
+            raise
+        
+        self.pipe = None  # Not used with faster-whisper
 
     def transcribe(self, audio_file):
         """Transcribe audio file to text.
@@ -106,27 +58,15 @@ class Transcriber:
             print(f"🎤 Starting transcription with model: {self.model_id.split('/')[-1]}...")
             
             start_time = time.time()
+
+            segments, _ = self.model.transcribe(audio_file, beam_size=self.beam_size)
+            text = " ".join([segment.text for segment in segments])
             
-            if self.use_faster_whisper:
-                # Use faster-whisper for transcription
-                segments, _ = self.model.transcribe(audio_file, beam_size=self.beam_size)
-                text = " ".join([segment.text for segment in segments])
-                
-                end_time = time.time()
-                duration = end_time - start_time
-                print(f"✓ Transcription complete in {duration:.2f} seconds: \"{text[:50]}{'...' if len(text) > 50 else ''}\"")
-                
-                return text
-            else:
-                # Use transformers pipeline for transcription
-                result = self.pipe(audio_file)
-                
-                end_time = time.time()
-                duration = end_time - start_time
-                text = result["text"]
-                print(f"✓ Transcription complete in {duration:.2f} seconds: \"{text[:50]}{'...' if len(text) > 50 else ''}\"")
-                
-                return text
+            end_time = time.time()
+            duration = end_time - start_time
+            print(f"✓ Transcription complete in {duration:.2f} seconds: \"{text[:50]}{'...' if len(text) > 50 else ''}\"")
+            
+            return text
                 
         except TypeError as e:
             if "unsupported operand type(s) for *: 'NoneType'" in str(e):

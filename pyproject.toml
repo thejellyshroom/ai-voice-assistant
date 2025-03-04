@@ -13,6 +13,7 @@ authors = [
     { name = "Your Name", email = "your.email@example.com" }
 ]
 dependencies = [
+    # Core dependencies
     "torch>=2.0.0",
     "torchaudio>=2.0.0",
     "transformers>=4.37.0",
@@ -25,7 +26,21 @@ dependencies = [
     "sentencepiece>=0.2.0",
     "accelerate>=0.26.0",
     "einops>=0.7.0",
-    # For examples
+    
+    # TTS dependencies
+    "kokoro>=0.3.4",
+    "espeak-phonemizer>=1.0.0",
+    
+    # Speech recognition improvements
+    "faster-whisper>=0.10.0",
+    
+    # Additional utilities
+    "datasets>=2.14.0",
+    "librosa>=0.10.1",
+    "scipy>=1.10.0",
+    "ffmpeg-python>=0.2.0",
+    
+    # For examples and UI
     "gradio>=4.0.0",
     "pandas>=2.0.0",
     "pydantic>=2.0.0",
@@ -34,5 +49,23 @@ dependencies = [
 [project.scripts]
 voice-assistant = "ai_voice_assistant.main:main"
 
+[project.urls]
+"Homepage" = "https://github.com/yourusername/ai-voice-assistant"
+"Bug Tracker" = "https://github.com/yourusername/ai-voice-assistant/issues"
+
 [tool.hatch.build.targets.wheel]
-packages = ["ai_voice_assistant"] 
+packages = ["ai_voice_assistant"]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+]
+
+[tool.hatch.envs.default.scripts]
+test = "pytest {args:tests}"
+test-cov = "pytest --cov=ai_voice_assistant {args:tests}"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"] 
