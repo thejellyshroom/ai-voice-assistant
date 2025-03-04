@@ -9,9 +9,9 @@
             "n_gpu_layers": -1,
             "repeat_penalty": 1.5,
             "n_ctx": 4096,
-            "temperature": 1.8,
+            "temperature": 1.5,
             "top_p": 0.95,
-            "top_k": 80,
+            "top_k": 60,
             "max_tokens": 2048
         }
     }
