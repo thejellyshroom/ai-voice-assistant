@@ -8,22 +8,48 @@ import time
 import sounddevice as sd
 import soundfile as sf
 import io
+import os
 
+#========TODO: add energy check for silent audio and for shouting. 30 for whispers, 100 for normal speech, 200 for shouting
+# shall be added to the config file and implemented in this way
 class AudioHandler:
-    def __init__(self, sample_rate=44100, channels=1, chunk=1024):
+    def __init__(self, sample_rate=44100, channels=1, chunk=1024, config=None):
+        """Initialize audio handler with recording and playback capabilities.
+        
+        Args:
+            sample_rate (int): Audio sample rate for recording
+            channels (int): Number of audio channels (1=mono, 2=stereo)
+            chunk (int): Chunk size for audio processing
+            config (dict): Configuration dictionary with audio validation parameters
+        """
         self.sample_rate = sample_rate
         self.channels = channels
         self.chunk = chunk
         self.format = pyaudio.paInt16
         self.pyaudio = pyaudio.PyAudio()
         self.recognizer = sr.Recognizer()
+        
+        # Print speech_recognition version for debugging
+        print(f"DEBUG: Using speech_recognition version: {sr.__version__}")
+        
+        # Set and print recognizer parameters
         self.recognizer.pause_threshold = 1.0  # Seconds of silence before considering the phrase complete
         self.recognizer.phrase_threshold = 0.3  # Minimum seconds of speaking audio before we consider the phrase started
         self.recognizer.non_speaking_duration = 0.5  # Seconds of non-speaking audio to keep on both sides of the recording
-        self.recognizer.energy_threshold = 20  # Minimum audio energy to consider for recording (lowered based on observed values)
+        self.recognizer.energy_threshold = 30  # Minimum audio energy to consider for recording (lowered based on observed values)
         self.recognizer.dynamic_energy_threshold = True  # Automatically adjust for ambient noise
         self.recognizer.dynamic_energy_adjustment_damping = 0.15
         self.recognizer.dynamic_energy_ratio = 1.5
+        
+        print(f"DEBUG: Recognizer settings: energy_threshold={self.recognizer.energy_threshold}, dynamic_energy_threshold={self.recognizer.dynamic_energy_threshold}")
+        
+        # Audio validation parameters
+        self.config = config or {}
+        self.audio_validation = self.config.get('audio_validation', {})
+        self.min_duration = self.audio_validation.get('min_duration', 0.5)
+        self.min_energy = self.audio_validation.get('min_energy', 30)
+        self.min_file_size = self.audio_validation.get('min_file_size', 1000)
+        self.max_retries = self.audio_validation.get('max_retries', 2)
         
         # Audio playback queue and thread
         self.audio_queue = queue.Queue(maxsize=100)
@@ -36,17 +62,6 @@ class AudioHandler:
         self.last_audio_timestamp = 0.0
         
     def listen_for_speech(self, filename="prompt.wav", timeout=None, stop_playback=False):
-        """Record audio from microphone until silence is detected.
-        
-        Args:
-            filename (str): Output filename (will be saved as WAV)
-            timeout (int, optional): Maximum number of seconds to wait before giving up
-            stop_playback (bool): Whether to stop any ongoing playback before listening
-                                 Default is False to allow listening without stopping playback
-            
-        Returns:
-            str: Path to the saved audio file
-        """
         # Stop any ongoing playback if requested
         if stop_playback:
             try:
@@ -69,49 +84,68 @@ class AudioHandler:
             self.recognizer.phrase_threshold = 0.2     # Detect speech relatively quickly
             self.recognizer.non_speaking_duration = 0.8  # Keep some silence but not too much
             
-            retry_count = 0
-            max_retries = 2
+            # Crucial fix: Set the energy threshold to a reasonable value
+            # This determines how loud a sound needs to be to be considered speech
+            self.recognizer.energy_threshold = 30  # Higher value means less sensitive
             
-            while retry_count <= max_retries:
+            retry_count = 0
+            
+            while retry_count <= self.max_retries:
                 try:
+                    
                     with sr.Microphone() as source:
                         # Adjust for ambient noise with a longer duration for first attempt
                         duration = 1.0 if retry_count == 0 else 0.5
                         self.recognizer.adjust_for_ambient_noise(source, duration=duration)
                         
                         # Listen for speech with proper timeout
+                        print(f"Listening with timeout={timeout if timeout else 5} seconds...")
                         audio_data = self.recognizer.listen(
                             source, 
-                            timeout=timeout if timeout else 10,  # Default timeout to prevent hanging
+                            timeout=timeout if timeout else 5,  # Default timeout to prevent hanging
                             phrase_time_limit=30  # Limit single phrase to 30 seconds
                         )
                         
-                        # Save the audio data to a WAV file
-                        wav_filename = filename if filename.endswith('.wav') else f"{filename}.wav"
-                        with open(wav_filename, "wb") as f:
-                            f.write(audio_data.get_wav_data())
-                        
-                        # Quick validation check
+                        # Before saving the file, check if we actually got meaningful audio
                         audio_as_numpy = np.frombuffer(audio_data.frame_data, dtype=np.int16)
                         audio_duration = len(audio_data.frame_data) / (2 * 16000)
                         audio_energy = np.sqrt(np.mean(np.square(audio_as_numpy)))
                         
-                        print(f"Listening finished: Energy={audio_energy:.2f}")
+                        print(f"Listening finished: Duration={audio_duration:.2f}s, Energy={audio_energy:.2f}")
                         
-                        if audio_duration < 0.5 or audio_energy < 20:
-                            print("Warning: Very short or low energy audio detected.")
-                            if retry_count < max_retries:
-                                print(f"Retrying listen (attempt {retry_count+1}/{max_retries})...")
+                        # ====== ENERGY CHECK ====== can be used for future checks of whether whispering or shouting
+                        if audio_energy < 30:  # This is a more aggressive check for silent audio
+                            print(f"Warning: Very low energy audio detected (Energy={audio_energy:.2f} < 20 minimum).")
+                            # This is likely silence or background noise, treat as timeout
+                            if retry_count < self.max_retries:
+                                print(f"Retrying listen due to low energy (attempt {retry_count+1}/{self.max_retries})...")
                                 retry_count += 1
                                 continue
+                            else:
+                                return "low_energy"  # Treat as timeout error
+                        
+                        # Only save the file if we've passed all validation checks
+                        wav_filename = filename if filename.endswith('.wav') else f"{filename}.wav"
+                        with open(wav_filename, "wb") as f:
+                            f.write(audio_data.get_wav_data())
                         
                         print(f"Audio saved as {wav_filename}")
                         return wav_filename
                         
                 except sr.WaitTimeoutError:
                     print("No speech detected within timeout period.")
-                    if retry_count < max_retries:
-                        print(f"Retrying listen (attempt {retry_count+1}/{max_retries})...")
+                    if retry_count < self.max_retries:
+                        print(f"Retrying listen (attempt {retry_count+1}/{self.max_retries})...")
+                        retry_count += 1
+                        continue
+                    print("TIMEOUT_ERROR: Maximum retries exceeded. No speech detected within timeout period.")
+                    return "TIMEOUT_ERROR"  # Return a specific string to indicate a timeout error
+                except Exception as e:
+                    print(f"Unexpected error during listening: {type(e).__name__}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    if retry_count < self.max_retries:
+                        print(f"Retrying listen due to error (attempt {retry_count+1}/{self.max_retries})...")
                         retry_count += 1
                         continue
                     return None
@@ -121,6 +155,8 @@ class AudioHandler:
             
         except Exception as e:
             print(f"Error during listening: {e}")
+            import traceback
+            traceback.print_exc()
             return None
         finally:
             # Restore original parameters

@@ -26,36 +26,12 @@ class VoiceAssistant:
                  variability=0.3,
                  # ASR parameters 
                  transcription_model="Systran/faster-whisper-small",
+                 timeout=5,
                  # LLM parameters
                  temperature=0.7,
                  top_p=0.9,
                  top_k=40,
                  creativity="high"):
-        """Initialize the voice assistant with all components.
-        
-        Args:
-            # Configuration dictionaries
-            asr_config (dict): ASR configuration dictionary
-            tts_config (dict): TTS configuration dictionary
-            llm_config (dict): LLM configuration dictionary
-            
-            # Legacy parameters (used if configs not provided)
-            # TTS parameters
-            tts_model (str): The TTS model to use (default: "hexgrad/Kokoro-82M")
-            tts_voice (str): The voice to use for Kokoro TTS (default: "af_heart")
-            speech_speed (float): Speed factor for speech (default: 1.3, range: 0.5-2.0)
-            expressiveness (float): Voice expressiveness (default: 1.0, range: 0.0-2.0)
-            variability (float): Speech variability (default: 0.2, range: 0.0-1.0)
-            
-            # ASR parameters
-            transcription_model (str): The transcription model to use (default: "Systran/faster-whisper-small")
-            
-            # LLM parameters
-            temperature (float): LLM temperature (default: 0.7, range: 0.0-2.0)
-            top_p (float): LLM top-p sampling (default: 0.9, range: 0.0-1.0)
-            top_k (int): LLM top-k sampling (default: 40)
-            creativity (str): LLM creativity preset (default: None, choices: low, medium, high, random)
-        """
         # Store configuration dictionaries
         self.asr_config = asr_config or {}
         self.tts_config = tts_config or {}
@@ -156,7 +132,8 @@ class VoiceAssistant:
         """Load the audio handler component."""
         self._unload_component("audio_handler")
         try:
-            self.audio_handler = AudioHandler()
+            # Pass the ASR config to the AudioHandler for audio validation parameters
+            self.audio_handler = AudioHandler(config=self.asr_config)
             print("Audio handler initialized successfully.")
         except Exception as e:
             print(f"Error initializing audio handler: {str(e)}")
@@ -184,10 +161,14 @@ class VoiceAssistant:
                     
                 # Additional params could be added here for other ASR types
             
+            print(f"Initializing transcriber with model: {model_id} and params: {params}")
             self.transcriber = Transcriber(model_id=model_id, **params)
             print("Transcriber initialized successfully.")
         except Exception as e:
             print(f"Error initializing transcriber: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            self.transcriber = None  # Ensure it's None if initialization failed
     
     def load_llm_handler(self):
         """Load the LLM handler."""
@@ -278,7 +259,7 @@ class VoiceAssistant:
             timeout (int, optional): Maximum seconds to wait before giving up
             
         Returns:
-            str: Transcribed text
+            str: Transcribed text or error code
         """
         try:
             # Make sure any ongoing playback is completely finished
@@ -289,19 +270,20 @@ class VoiceAssistant:
                     self.audio_handler.stop_playback()
                     self.audio_handler.wait_for_playback_complete()
                 
-            if duration is not None:
-                # Legacy fixed-duration recording
-                audio_file = self.audio_handler.record_audio(duration=duration)
-            else:
-                # Dynamic listening that stops when silence is detected
                 print("Starting new listening session...")
                 audio_file = self.audio_handler.listen_for_speech(
                     timeout=timeout,
                     stop_playback=True  # Always stop playback before listening
                 )
                 
+            # Immediate early return for timeout errors - skip all transcription logic
+            if audio_file == "low_energy":
+                print("Timeout error detected: No speech within the timeout period.")
+                return "low_energy"
+            
+            # For other types of recording failures
             if audio_file is None:
-                print("No audio detected or recording failed")
+                print("No audio detected or recording failed for reasons other than timeout")
                 return ""
             
             # Additional validation for the audio file
@@ -315,20 +297,39 @@ class VoiceAssistant:
                     print(f"Warning: Audio file {audio_file} is empty (0 bytes)")
                     return ""
                     
-                if file_size < 1000:  # Less than 1KB is suspiciously small
-                    print(f"Warning: Audio file {audio_file} is suspiciously small ({file_size} bytes)")
-                    # We'll still try to transcribe it, but log the warning
+                # Get min_file_size from config or use default
+                min_file_size = 1000
+                if self.asr_config and 'audio_validation' in self.asr_config:
+                    min_file_size = self.asr_config['audio_validation'].get('min_file_size', 1000)
+                
+                if file_size < min_file_size:  # File is suspiciously small
+                    print(f"Warning: Audio file {audio_file} is suspiciously small ({file_size} bytes < {min_file_size} minimum)")
+                    # Don't attempt to transcribe too small files
+                    print("Audio file is too small to contain meaningful speech. Skipping transcription.")
+                    return ""
             except Exception as e:
                 print(f"Error validating audio file: {str(e)}")
                 return ""
                 
             # Try to transcribe with additional error handling
             try:
+                # Check if transcriber exists, reload it if not
+                if self.transcriber is None:
+                    print("Transcriber not initialized. Attempting to reload...")
+                    self.load_transcriber()
+                    
+                # Double-check transcriber exists after attempted reload
+                if self.transcriber is None:
+                    print("Failed to initialize transcriber. Cannot transcribe audio.")
+                    return ""
+                    
                 transcribed_text = self.transcriber.transcribe(audio_file)
                 print(f"Transcription successful: {len(transcribed_text)} characters")
                 return transcribed_text
             except Exception as e:
                 print(f"Error during transcription: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 return ""
         except Exception as e:
             print(f"Unexpected error in listen method: {str(e)}")
@@ -514,7 +515,7 @@ class VoiceAssistant:
             
             # Handle the case where no speech was detected
             if not transcribed_text or len(transcribed_text.strip()) < 2:
-                ai_response = "I didn't hear anything. Could you please speak again?"
+                ai_response = "Seems like you didn't say anything."
                 print("\nAssistant:", ai_response)
                 
                 # Only speak the response if TTS is enabled

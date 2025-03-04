@@ -9,12 +9,12 @@
             "n_gpu_layers": "-1",
             "seed": "42",
             "n_ctx": "4096",
-            "temperature": 0.7,
-            "top_p": 0.9,
-            "top_k": 40,
+            "temperature": 1.2,
+            "top_p": 0.95,
+            "top_k": 60,
             "max_tokens": 2048,
-            "frequency_penalty": 0.0,
-            "presence_penalty": 0.0
+            "frequency_penalty": 0.3,
+            "presence_penalty": 0.3
         }
     },
     "creative": {
