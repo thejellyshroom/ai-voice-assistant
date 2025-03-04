@@ -278,8 +278,11 @@ class VoiceAssistant:
                 
             # Immediate early return for timeout errors - skip all transcription logic
             if audio_file == "low_energy":
-                print("Timeout error detected: No speech within the timeout period.")
+                print("Timeout error detected: speech volume too low")
                 return "low_energy"
+            elif audio_file == "TIMEOUT_ERROR":
+                print("Timeout error detected: no speech detected within 5 seconds")
+                return "TIMEOUT_ERROR"
             
             # For other types of recording failures
             if audio_file is None:
@@ -527,6 +530,14 @@ class VoiceAssistant:
                         self.audio_handler.wait_for_playback_complete()
                 
                 return "", ai_response
+            
+            if transcribed_text == "TIMEOUT_ERROR":
+                ai_response = "Time out error occurred"
+                print("\nAssistant:", ai_response)
+                
+                # Only speak the response if TTS is enabled
+                if self.tts_enabled:
+                    self.speak(ai_response)
             
             # ===== PHASE 3: PROCESSING USER INPUT =====    
             print("\nYou said:", transcribed_text)

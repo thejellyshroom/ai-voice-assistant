@@ -16,7 +16,18 @@
       "min_duration": 0.5,
       "min_file_size": 1000,
       "max_retries": 2,
-      "energy_threshold": 50
+      "energy_threshold": 30,
+      "timeout": 5,
+      "min_energy": 30
+    },
+    "recognizer": {
+      "pause_threshold": 1.0,
+      "phrase_threshold": 0.3,
+      "non_speaking_duration": 0.5,
+      "energy_threshold": 30,
+      "dynamic_energy_threshold": true,
+      "dynamic_energy_adjustment_damping": 0.15,
+      "dynamic_energy_ratio": 1.5
     }
   },
   "high_quality": {
@@ -32,7 +43,8 @@
       "min_duration": 0.5,
       "min_file_size": 1000,
       "max_retries": 2,
-      "energy_threshold": 40
+      "energy_threshold": 40,
+      "timeout": 5
     }
   },
   "medium": {
