@@ -29,6 +29,7 @@ class AudioHandler:
         self.max_retries = self.audio_validation.get('max_retries')
         self.timeout = self.audio_validation.get('timeout')
         self.min_energy = self.audio_validation.get('min_energy')
+        self.max_phrase_duration = self.audio_validation.get('max_phrase_duration')  # Default 5 minutes
 
         # Recognizer parameters
         self.recognizer_config = self.config.get('recognizer', {})
@@ -85,7 +86,7 @@ class AudioHandler:
                         audio_data = self.recognizer.listen(
                             source, 
                             timeout=timeout if timeout else 5,  # Default timeout to prevent hanging
-                            phrase_time_limit=30  # Limit single phrase to 30 seconds
+                            phrase_time_limit=self.max_phrase_duration  # Use configurable max duration
                         )
                         
                         # Before saving the file, check if we actually got meaningful audio

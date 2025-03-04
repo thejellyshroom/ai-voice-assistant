@@ -18,7 +18,8 @@
       "max_retries": 2,
       "energy_threshold": 30,
       "timeout": 5,
-      "min_energy": 30
+      "min_energy": 30,
+      "max_phrase_duration": 300
     },
     "recognizer": {
       "pause_threshold": 1.0,
