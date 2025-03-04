@@ -68,8 +68,8 @@ class AudioHandler:
         try:
             # Use balanced settings that won't cut off too early or wait too long
             self.recognizer.pause_threshold = 1.5      # Wait 1.5 seconds of silence before ending (balanced)
-            self.recognizer.phrase_threshold = 0.2     # Detect speech relatively quickly
-            self.recognizer.non_speaking_duration = 0.8  # Keep some silence but not too much
+            self.recognizer.phrase_threshold = 0.3     # Detect speech relatively quickly
+            self.recognizer.non_speaking_duration = 1.0  # Keep some silence but not too much
             
             retry_count = 0
             

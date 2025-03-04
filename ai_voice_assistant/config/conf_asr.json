@@ -23,7 +23,7 @@
     "recognizer": {
       "pause_threshold": 1.0,
       "phrase_threshold": 0.3,
-      "non_speaking_duration": 0.5,
+      "non_speaking_duration": 1.0,
       "energy_threshold": 30,
       "dynamic_energy_threshold": true,
       "dynamic_energy_adjustment_damping": 0.15,

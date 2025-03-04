@@ -427,12 +427,8 @@ class VoiceAssistant:
         return sentences
     
 
-    def interact_streaming(self, duration=None, timeout=10, phrase_limit=60):
+    def interact_streaming(self, duration=None, timeout=10, phrase_limit=10):
         """Record audio, transcribe, process with streaming response.
-        
-        This method is similar to the neurosama.py approach, where the LLM response
-        is streamed in chunks and TTS is generated for each chunk.
-        
         Args:
             duration (int, optional): Fixed recording duration in seconds
             timeout (int, optional): Maximum seconds to wait before giving up

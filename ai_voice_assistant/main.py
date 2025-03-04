@@ -31,7 +31,7 @@ def main():
     parser = argparse.ArgumentParser(description='AI Voice Assistant')
     parser.add_argument('--fixed-duration', type=int, help='Use fixed duration recording instead of dynamic listening')
     parser.add_argument('--timeout', type=int, default=5, help='Maximum seconds to wait for speech before giving up')
-    parser.add_argument('--phrase-limit', type=int, default=60, help='Maximum seconds for a single phrase')
+    parser.add_argument('--phrase-limit', type=int, default=10, help='Maximum seconds for a single phrase')
 
     # Configuration file options
     parser.add_argument('--config', type=str, help='Path to global configuration file')
