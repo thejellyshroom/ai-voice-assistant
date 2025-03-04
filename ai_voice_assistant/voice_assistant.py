@@ -16,63 +16,30 @@ class VoiceAssistant:
                  # Configuration dictionaries
                  asr_config=None,
                  tts_config=None,
-                 llm_config=None,
-                 # Legacy parameters - will be used if configs not provided
-                 # TTS parameters
-                 tts_model="hexgrad/Kokoro-82M", 
-                 tts_voice="af_heart", 
-                 speech_speed=1.3,
-                 expressiveness=1.0,
-                 variability=0.3,
-                 # ASR parameters 
-                 transcription_model="Systran/faster-whisper-small",
-                 timeout=5,
-                 # LLM parameters
-                 temperature=0.7,
-                 top_p=0.9,
-                 top_k=40,
-                 creativity="high"):
+                 llm_config=None):
         # Store configuration dictionaries
         self.asr_config = asr_config or {}
         self.tts_config = tts_config or {}
         self.llm_config = llm_config or {}
         
         # TTS configuration parameters (prioritize config dict over legacy params)
-        if 'model_id' in self.tts_config:
-            self.tts_model = self.tts_config['model_id']
-        else:
-            self.tts_model = tts_model
+        self.tts_model = self.tts_config.get('model_id')
             
-        if 'kokoro' in self.tts_config:
-            kokoro_conf = self.tts_config['kokoro']
-            self.tts_voice = kokoro_conf.get('voice', tts_voice)
-            self.speech_speed = kokoro_conf.get('speech_speed', speech_speed)
-            self.expressiveness = kokoro_conf.get('expressiveness', expressiveness)
-            self.variability = kokoro_conf.get('variability', variability)
-        else:
-            self.tts_voice = tts_voice
-            self.speech_speed = speech_speed
-            self.expressiveness = expressiveness
-            self.variability = variability
+        kokoro_conf = self.tts_config.get('kokoro', {})
+        self.tts_voice = kokoro_conf.get('voice')
+        self.speech_speed = kokoro_conf.get('speech_speed')
+        self.expressiveness = kokoro_conf.get('expressiveness')
+        self.variability = kokoro_conf.get('variability')
         
         # ASR configuration parameters
-        if 'model_id' in self.asr_config:
-            self.transcription_model = self.asr_config['model_id']
-        else:
-            self.transcription_model = transcription_model
+        self.transcription_model = self.asr_config.get('model_id')
         
         # LLM configuration parameters
-        if 'local' in self.llm_config:
-            local_conf = self.llm_config['local']
-            self.temperature = local_conf.get('temperature', temperature)
-            self.top_p = local_conf.get('top_p', top_p)
-            self.top_k = local_conf.get('top_k', top_k)
-            self.creativity = local_conf.get('creativity', creativity)
-        else:
-            self.temperature = temperature
-            self.top_p = top_p
-            self.top_k = top_k
-            self.creativity = creativity
+        local_conf = self.llm_config.get('local', {})
+        self.temperature = local_conf.get('temperature')
+        self.top_p = local_conf.get('top_p')
+        self.top_k = local_conf.get('top_k')
+        self.creativity = local_conf.get('creativity')
         
         # Components will be initialized on demand
         self.audio_handler = None
@@ -174,40 +141,8 @@ class VoiceAssistant:
         """Load the LLM handler."""
         print("Loading LLM handler...")
         if self.llm_handler is None:
-            # Build parameters dict for LLM
-            params = {}
-            
-            if 'local' in self.llm_config:
-                # Use values from config
-                local_conf = self.llm_config['local']
-                params = {
-                    'temperature': local_conf.get('temperature', self.temperature),
-                    'top_p': local_conf.get('top_p', self.top_p),
-                    'top_k': local_conf.get('top_k', self.top_k),
-                    'frequency_penalty': local_conf.get('frequency_penalty', 0.0),
-                    'presence_penalty': local_conf.get('presence_penalty', 0.0)
-                }
-                
-                # Set model name if available
-                if 'model_name' in self.llm_config:
-                    params['model_name'] = self.llm_config['model_name']
-                
-                # Add creativity preset if specified
-                if 'creativity' in local_conf:
-                    params['creativity'] = local_conf['creativity']
-            else:
-                # Use instance variables
-                params = {
-                    'temperature': self.temperature,
-                    'top_p': self.top_p,
-                    'top_k': self.top_k
-                }
-                
-                # Add creativity preset if specified
-                if self.creativity:
-                    params['creativity'] = self.creativity
-                
-            self.llm_handler = LLMHandler(**params)
+            # Pass the full config structure to LLMHandler
+            self.llm_handler = LLMHandler(config=self.llm_config)
         
     def load_tts_handler(self):
         """Load the TTS handler."""

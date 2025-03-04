@@ -80,30 +80,6 @@ def main():
     # Prepare parameters for VoiceAssistant
     assistant_params = {}
     
-    # Add TTS parameters
-    if 'model_id' in tts_config:
-        assistant_params['tts_model'] = tts_config['model_id']
-    
-    if 'kokoro' in tts_config:
-        kokoro_conf = tts_config['kokoro']
-        assistant_params['tts_voice'] = kokoro_conf.get('voice')
-        assistant_params['speech_speed'] = kokoro_conf.get('speech_speed')
-        assistant_params['expressiveness'] = kokoro_conf.get('expressiveness')
-        assistant_params['variability'] = kokoro_conf.get('variability')
-    
-    # Add ASR parameters
-    if 'model_id' in asr_config:
-        assistant_params['transcription_model'] = asr_config['model_id']
-    
-    # Add LLM parameters
-    if 'local' in llm_config:
-        local_conf = llm_config['local']
-        assistant_params['temperature'] = local_conf.get('temperature')
-        assistant_params['top_p'] = local_conf.get('top_p')
-        assistant_params['top_k'] = local_conf.get('top_k')
-        if 'creativity' in local_conf:
-            assistant_params['creativity'] = local_conf['creativity']
-    
     # Provide configs to VoiceAssistant
     assistant_params['asr_config'] = asr_config
     assistant_params['tts_config'] = tts_config
