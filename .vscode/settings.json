@@ -1,0 +1,4 @@
+{
+    "python.analysis.extraPaths": ["${workspaceFolder}/MeloTTS"],
+    "python.autoComplete.extraPaths": ["${workspaceFolder}/MeloTTS"]
+} 

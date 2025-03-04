@@ -25,9 +25,9 @@ class VoiceAssistant:
         # TTS configuration parameters (prioritize config dict over legacy params)
         self.tts_model = self.tts_config.get('model_id')
             
-        kokoro_conf = self.tts_config.get('kokoro', {})
+        kokoro_conf = self.tts_config.get('melo', {})
         self.tts_voice = kokoro_conf.get('voice')
-        self.speech_speed = kokoro_conf.get('speech_speed')
+        self.speed = kokoro_conf.get('speed')
         self.expressiveness = kokoro_conf.get('expressiveness')
         self.variability = kokoro_conf.get('variability')
         
@@ -76,7 +76,7 @@ class VoiceAssistant:
         
         print(f"TTS Model: {self.tts_model}")
         print(f"TTS Voice: {self.tts_voice}")
-        print(f"Speech Speed: {self.speech_speed}x")
+        print(f"Speech Speed: {self.speed}x")
         print("Press Ctrl+C to exit")
     
     def _unload_component(self, component_name):
@@ -150,36 +150,7 @@ class VoiceAssistant:
         self._unload_component("tts_handler")
         
         try:
-            # Prepare TTS parameters from config or legacy params
-            tts_params = {
-                'model_id': self.tts_model,
-                'voice': self.tts_voice,
-                'speech_speed': self.speech_speed
-            }
-            
-            # Extract additional parameters from config if available
-            if 'kokoro' in self.tts_config:
-                kokoro_conf = self.tts_config['kokoro']
-                if 'sample_rate' in kokoro_conf:
-                    tts_params['sample_rate'] = kokoro_conf['sample_rate']
-                
-            print(f"Initializing TTS with: {tts_params}")
-            self.tts_handler = TTSHandler(**tts_params)
-            
-            # Set voice characteristics
-            char_params = {
-                'expressiveness': self.expressiveness,
-                'variability': self.variability,
-            }
-            
-            if 'kokoro' in self.tts_config:
-                kokoro_conf = self.tts_config['kokoro']
-                if 'available_voices' in kokoro_conf:
-                    # Update available voices if provided in config
-                    self.tts_handler.available_voices = kokoro_conf['available_voices']
-            
-            self.tts_handler.set_characteristics(**char_params)
-            
+            self.tts_handler = TTSHandler(config=self.tts_config)
             self.tts_enabled = True
             print("TTS handler loaded successfully.")
         except Exception as e:
@@ -427,7 +398,7 @@ class VoiceAssistant:
         return sentences
     
 
-    def interact_streaming(self, duration=None, timeout=10, phrase_limit=10):
+    def interact_streaming(self, timeout=10, phrase_limit=10):
         """Record audio, transcribe, process with streaming response.
         Args:
             duration (int, optional): Fixed recording duration in seconds
@@ -445,7 +416,7 @@ class VoiceAssistant:
             
             # ===== PHASE 2: LISTENING FOR USER INPUT =====
             print("\nListening for your voice...")
-            transcribed_text = self.listen(duration=duration, timeout=timeout)
+            transcribed_text = self.listen(timeout=timeout)
             
             # Handle the case where no speech was detected
             if not transcribed_text or len(transcribed_text.strip()) < 2:

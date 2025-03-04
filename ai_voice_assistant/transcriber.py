@@ -7,17 +7,6 @@ import time
 
 class Transcriber:
     def __init__(self, model_id="Systran/faster-whisper-small", **kwargs):
-        """Initialize the transcriber with Whisper model.
-        
-        Args:
-            model_id (str): Model identifier (default: "Systran/faster-whisper-small")
-            **kwargs: Additional model parameters
-                - beam_size (int): Beam size for faster-whisper (default: 5)
-                - compute_type (str): Compute type for faster-whisper (default: "float16")
-                - device (str): Device to use (default: "cuda" if available, else "cpu")
-                - use_safetensors (bool): Whether to use safetensors for transformers (default: True)
-                - low_cpu_mem_usage (bool): Low CPU memory usage for transformers (default: True)
-        """
         self.model_id = model_id
         
         # Extract parameters from kwargs with defaults

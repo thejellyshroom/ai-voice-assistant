@@ -1,7 +1,17 @@
+import sys
+import os
+
+# Add MeloTTS to Python path (for both runtime and IDE)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'MeloTTS'))
+
 import torch
 import numpy as np
 from transformers import pipeline
 from kokoro import KPipeline
+from melo.api import TTS
+import nltk
+nltk.download('averaged_perceptron_tagger_eng')
+
 
 import logging
 import os
@@ -11,42 +21,59 @@ import time
 
 
 class TTSHandler:
-    def __init__(self, model_id="hexgrad/Kokoro-82M", voice="af_heart", speech_speed=1.3, sample_rate=24000):
-        self.model_id = model_id
-        self.voice = voice
-        self.base_speech_speed = max(0.5, min(2.0, speech_speed))  # Clamp between 0.5 and 2.0
-        self.speech_speed = self.base_speech_speed
-        self.sample_rate = sample_rate
+    def __init__(self, config):
+        config = config.get('melo', {})
+        self.model_id = config.get('model_id')
+        self.voice = config.get('voice')
         
-        # Voice characteristics
-        self.available_voices = self._get_available_voices()
-        self.speech_characteristics = {
-            "expressiveness": 1.0,  # 0.0-2.0, how expressive the voice is
-            "variability": 0.2,     # 0.0-1.0, how much the speech speed varies
-            "character": voice      # Voice character/persona
+        # Map voice to language code for MeloTTS
+        language_map = {
+            "EN-US": "EN", "EN-BR": "EN", "EN_INDIA": "EN", "EN-AU": "EN", "EN-Default": "EN",
+            "ES": "ES", "FR": "FR", "ZH": "ZH", "JP": "JP", "KR": "KR"
         }
         
-        print(f"Initializing Kokoro TTS with voice: {voice}")
+        self.base_speech_speed = max(0.5, min(2.0, config.get('speed', 1.0)))  # Clamp between 0.5 and 2.0
+        self.speed = self.base_speech_speed
+        self.sample_rate = config.get('sample_rate', 24000)
+        self.device = config.get('device', 'cpu')
+        
+        # Initialize language code for the TTS model
+        language_code = language_map.get(self.voice, "EN")
+        
+        try:
+            print(f"Initializing MeloTTS with language '{language_code}' on device '{self.device}'")
+            self.model = TTS(language=language_code, device=self.device)
+            print("MeloTTS model loaded successfully")
+        except Exception as e:
+            print(f"Error initializing MeloTTS model: {e}")
+            raise
+        
+        # Voice characteristics
+        self.speech_characteristics = {
+            "expressiveness": config.get('expressiveness', 1.0),  # 0.0-2.0, how expressive the voice is
+            "variability": config.get('variability', 0.2),     # 0.0-1.0, how much the speech speed varies
+            "character": self.voice      # Voice character/persona
+        }
+        
+        # Map voice names to speaker IDs - use 0 as default
+        self.speaker_id_map = {
+            "EN-US": 0, "EN-BR": 1, "EN_INDIA": 2, "EN-AU": 3, "EN-Default": 4,
+            "ZH": 0,
+            "ES": 0, "FR": 0, "JP": 0, "KR": 0
+        }
+        
+        print(f"TTS with voice: {self.voice}")
         print(f"Base speech speed set to: {self.base_speech_speed}x")
         print(f"Sample rate set to: {self.sample_rate}")
         print(f"Speech characteristics: {self.speech_characteristics}")
         
         # Determine language code from voice prefix
-        lang_code = voice[0]  # First letter of voice ID determines language
-        self.kokoro_pipeline = KPipeline(lang_code=lang_code)
+        lang_code = self.voice[0]  # First letter of voice ID determines language
+        # self.kokoro_pipeline = KPipeline(lang_code=lang_code)
         
     def set_characteristics(self, **kwargs):
-        """Update speech characteristics.
-        
-        Args:
-            **kwargs: Characteristics to update
-                - expressiveness (float): 0.0-2.0
-                - variability (float): 0.0-1.0
-                - character (str): Voice ID
-        """
         for key, value in kwargs.items():
             if key in self.speech_characteristics:
-                # Validate values
                 if key == "expressiveness":
                     value = max(0.0, min(2.0, value))
                 elif key == "variability":
@@ -55,40 +82,17 @@ class TTSHandler:
                     print(f"Warning: Invalid voice '{value}'. Using '{self.voice}'.")
                     value = self.voice
                 
-                # Update the characteristic
                 self.speech_characteristics[key] = value
                 
-                # Special handling for character/voice change
                 if key == "character" and value != self.voice:
                     self.voice = value
-                    # Update language code if needed
-                    lang_code = value[0]
-                    self.kokoro_pipeline = KPipeline(lang_code=lang_code)
+                    self.model = TTS(language=self.voice[:2], device=self.device)
         
         print(f"Updated speech characteristics: {self.speech_characteristics}")
         
-    def _get_available_voices(self):
-        """Get list of available Kokoro voices."""
-        # These are common Kokoro voices - the actual list will be overridden by config if available
-        return [
-            "af_heart", "af_nicole", "af_spirit", "af_alloy", "af_aoede", "af_bella", "af_jessica", 
-            "af_kore", "af_nova", "af_river", "af_sarah", "af_sky",
-            "e_asif", "e_cassie", "e_emma", "e_jack", "e_jeremy", "e_josh", "e_lucy", "e_maria"
-        ]
 
         
     def synthesize(self, text, **kwargs):
-        """Convert text to speech with optional characteristics override.
-        
-        Args:
-            text (str): Text to convert to speech
-            **kwargs: Optional characteristic overrides for this utterance
-                - expressiveness, variability, character
-                
-        Returns:
-            tuple: (audio_array, sample_rate)
-        """
-        # Apply any temporary characteristic overrides
         if kwargs:
             temp_characteristics = self.speech_characteristics.copy()
             self.set_characteristics(**kwargs)
@@ -97,119 +101,67 @@ class TTSHandler:
             if not text:
                 return np.zeros(0, dtype=np.float32), self.sample_rate
             
-            # For very long text, split into sentences and process separately
             if len(text) > 200:
                 sentences = self._split_into_sentences(text)
                 audio_segments = []
-                sample_rate = self.sample_rate
-                silence_duration = kwargs.get('sentence_silence', 0.2)  # Get from kwargs or use default
+                silence_duration = kwargs.get('sentence_silence', 0.2)
                 
                 for sentence in sentences:
                     if not sentence.strip():
                         continue
                     
                     try:
-                        # Generate speech for each sentence
                         audio_segment = self._synthesize_single(sentence)
-                        
-                        # Ensure audio_segment is not None
-                        if audio_segment is None:
-                            print(f"Warning: Got None audio segment for sentence: {sentence}")
-                            continue
-                            
-                        if len(audio_segment) > 0:
+                        if audio_segment is not None and len(audio_segment) > 0:
                             audio_segments.append(audio_segment)
-                            # Add a small silence between sentences
-                            silence = np.zeros(int(silence_duration * sample_rate), dtype=np.float32)
+                            silence = np.zeros(int(silence_duration * self.sample_rate), dtype=np.float32)
                             audio_segments.append(silence)
                     except Exception as e:
                         print(f"Error synthesizing sentence: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
                         continue
                 
-                # Combine all audio segments
                 if audio_segments:
-                    try:
-                        combined_audio = np.concatenate(audio_segments)
-                        return combined_audio, sample_rate
-                    except Exception as e:
-                        print(f"Error combining audio segments: {str(e)}")
-                        import traceback
-                        traceback.print_exc()
-                        return np.zeros(0, dtype=np.float32), sample_rate
+                    combined_audio = np.concatenate(audio_segments)
+                    return combined_audio, self.sample_rate
                 else:
                     print("Warning: No audio segments were generated")
-                    return np.zeros(0, dtype=np.float32), sample_rate
-            else:
-                # Process short text directly
-                # Set speed for the entire text
-                audio = self._synthesize_single(text)
-                if audio is None:
-                    print(f"Warning: Got None audio for text: {text}")
                     return np.zeros(0, dtype=np.float32), self.sample_rate
+            else:
+                audio = self._synthesize_single(text)
                 return audio, self.sample_rate
         except Exception as e:
-            # Catch-all for any unexpected errors
             print(f"Unexpected error in speech synthesis: {str(e)}")
-            import traceback
-            traceback.print_exc()
             return np.zeros(0, dtype=np.float32), self.sample_rate
         finally:
-            # Restore original characteristics if they were temporarily overridden
             if kwargs:
                 self.speech_characteristics = temp_characteristics
+
     
     def _synthesize_single(self, text):
-        """Synthesize a single piece of text.
-        
-        Args:
-            text (str): Text to convert to speech
-            
-        Returns:
-            numpy.ndarray: Audio array
-        """
         try:
-            print(f"Synthesizing with speed: {self.speech_speed:.2f}x, voice: {self.voice}")
+            print(f"Synthesizing with speed: {self.speed:.2f}x, voice: {self.voice}")
             
-            generator = self.kokoro_pipeline(
-                text,
-                voice=self.voice,
-                speed=self.speech_speed,
-                split_pattern=r'\n+'
-            )
+            # Get numeric speaker_id from the voice name
+            speaker_id = self.speaker_id_map.get(self.voice, 0)
+            print(f"Using speaker_id: {speaker_id} for voice: {self.voice}")
             
-            audio_segments = []
-            for _, _, audio in generator:
-                # Check if audio is None or not a tensor
-                if audio is None:
-                    print("Warning: Received None audio from Kokoro pipeline")
-                    continue
-                
-                # Handle different types of audio objects
-                if hasattr(audio, 'numpy'):
-                    # PyTorch tensor
-                    audio_segments.append(audio.numpy())
-                elif isinstance(audio, np.ndarray):
-                    # Already a numpy array
-                    audio_segments.append(audio)
-                else:
-                    # Try to convert to numpy array
-                    try:
-                        audio_segments.append(np.array(audio, dtype=np.float32))
-                    except Exception as e:
-                        print(f"Error converting audio to numpy array: {str(e)}")
-                        continue
+            # For MeloTTS, try different parameter combinations based on what works
+            try:
+                # First try with speaker_id and speed
+                audio = self.model.tts_to_file(text=text, speaker_id=speaker_id, speed=self.speed)
+            except TypeError as e:
+                print(f"First TTS attempt failed: {e}, trying alternative API")
+                try:
+                    # Then try with just speaker_id
+                    audio = self.model.tts_to_file(text=text, speaker_id=speaker_id)
+                except Exception as e2:
+                    print(f"Second TTS attempt failed: {e2}, trying with minimal parameters")
+                    # Finally try with just text
+                    audio = self.model.tts_to_file(text=text, speaker_id=0)
             
-            if audio_segments:
-                combined_audio = np.concatenate(audio_segments)
-                return combined_audio
-            else:
-                return np.zeros(0, dtype=np.float32)
+            return audio
         except Exception as e:
-            print(f"Error in Kokoro speech synthesis: {str(e)}")
-            import traceback
-            traceback.print_exc()
+            print(f"Error in MeloTTS speech synthesis: {str(e)}")
             return np.zeros(0, dtype=np.float32)
     
     def _split_into_sentences(self, text):
