@@ -23,13 +23,28 @@ class VoiceAssistant:
         self.llm_config = llm_config or {}
         
         # TTS configuration parameters (prioritize config dict over legacy params)
-        self.tts_model = self.tts_config.get('model_id')
+        self.tts_model = self.tts_config.get('model_id', 'hexgrad/Kokoro-82M')
             
         kokoro_conf = self.tts_config.get('kokoro', {})
-        self.tts_voice = kokoro_conf.get('voice')
-        self.speed = kokoro_conf.get('speed')
-        self.expressiveness = kokoro_conf.get('expressiveness')
-        self.variability = kokoro_conf.get('variability')
+        # Set default values for Kokoro parameters if they are not provided
+        self.tts_voice = kokoro_conf.get('voice', 'af_heart')  # Default voice
+        self.speed = kokoro_conf.get('speed', 1.3)  # Default speed
+        self.expressiveness = kokoro_conf.get('expressiveness', 1.0)  # Default expressiveness
+        self.variability = kokoro_conf.get('variability', 0.2)  # Default variability
+        
+        # Ensure kokoro config exists and has the right parameters
+        if 'kokoro' not in self.tts_config:
+            self.tts_config['kokoro'] = {}
+        
+        # Update with the default values we've set
+        if 'voice' not in self.tts_config['kokoro']:
+            self.tts_config['kokoro']['voice'] = self.tts_voice
+        if 'speed' not in self.tts_config['kokoro']:
+            self.tts_config['kokoro']['speed'] = self.speed
+        if 'expressiveness' not in self.tts_config['kokoro']:
+            self.tts_config['kokoro']['expressiveness'] = self.expressiveness
+        if 'variability' not in self.tts_config['kokoro']:
+            self.tts_config['kokoro']['variability'] = self.variability
         
         # ASR configuration parameters
         self.transcription_model = self.asr_config.get('model_id')
@@ -134,21 +149,16 @@ class VoiceAssistant:
         self._unload_component("tts_handler")
         
         try:
-            # Prepare TTS parameters from config or legacy params
-            tts_params = {
-                'model_id': self.tts_model,
-                'voice': self.tts_voice,
-                'speed': self.speed
-            }
-                
-            print(f"Initializing TTS with: {tts_params}")
+            # All TTS configuration should already be set up in __init__
+            print(f"Initializing TTS with config: {self.tts_config}")
             self.tts_handler = TTSHandler(self.tts_config)
-
             
             self.tts_enabled = True
             print("TTS handler loaded successfully.")
         except Exception as e:
             print(f"Error loading TTS handler: {e}")
+            import traceback
+            traceback.print_exc()
             self.tts_enabled = False
         
     def listen(self, duration=None, timeout=None):
@@ -313,10 +323,10 @@ class VoiceAssistant:
             return False
     
     def speak_streaming(self, text):
-        """Convert text to speech with streaming output.
+        """Convert text to speech with streaming output using RealtimeTTS.
         
-        This method splits text into sentences and streams them as they're synthesized,
-        similar to how neurosama.py handles TTS output.
+        This method utilizes RealtimeTTS's streaming capabilities to provide real-time
+        text-to-speech with lower latency, specially optimized for LLM streaming responses.
         
         Args:
             text (str): Text to speak
@@ -324,16 +334,9 @@ class VoiceAssistant:
         Returns:
             bool: True if speech was successfully played, False otherwise
         """
-        initial_buffer = "..."  # Helps prevent first word cutoff
-        sentences = self._split_into_sentences(initial_buffer + text)
-    
-        for i, sentence in enumerate(sentences):
-            if i == 0 and sentence == "...":  # Skip our buffer
-                continue
-
-            if not self.tts_enabled:
-                print("TTS is disabled. Cannot speak the response.")
-                return False
+        if not self.tts_enabled:
+            print("TTS is disabled. Cannot speak the response.")
+            return False
                 
         try:
             # Ensure text is not None
@@ -341,33 +344,27 @@ class VoiceAssistant:
                 print("Warning: Received None text to speak")
                 return False
             
-            # Split text into sentences for more natural streaming
-            sentences = self._split_into_sentences(text)
+            # For RealtimeTTS, we don't need to split the text, as it handles streaming
+            # We use the existing synthesize method which was updated to use RealtimeTTS
+            audio_array, sample_rate = self.tts_handler.synthesize(text)
             
-            for sentence in sentences:
+            # Ensure audio_array is not None
+            if audio_array is None:
+                print("Warning: Received None audio array from TTS handler")
+                return False
                 
-                # Synthesize and play the sentence
-                audio_array, sample_rate = self.tts_handler.synthesize(sentence)
+            if len(audio_array) > 0:
+                self.audio_handler.play_audio(audio_array, sample_rate)
                 
-                # Ensure audio_array is not None
-                if audio_array is None:
-                    print("Warning: Received None audio array from TTS handler")
-                    continue
-                    
-                if len(audio_array) > 0:
-                    self.audio_handler.play_audio(audio_array, sample_rate)
-                    
-                    # Small pause between sentences for more natural speech
-                    time.sleep(0.3)
-                else:
-                    print("Generated audio is empty. Cannot play.")
-            
-            # Wait for all audio to finish playing
-            if self.audio_handler and self.audio_handler.is_playing:
-                # Let the AudioHandler calculate the appropriate timeout based on the audio duration
-                self.audio_handler.wait_for_playback_complete(timeout=None)
-            
-            return True
+                # Wait for all audio to finish playing
+                if self.audio_handler and self.audio_handler.is_playing:
+                    # Let the AudioHandler calculate the appropriate timeout based on the audio duration
+                    self.audio_handler.wait_for_playback_complete(timeout=None)
+                
+                return True
+            else:
+                print("Generated audio is empty. Cannot play.")
+                return False
             
         except Exception as e:
             print(f"Error in speech synthesis: {str(e)}")
@@ -441,57 +438,43 @@ class VoiceAssistant:
             # Add user message to conversation history
             self.conversation_history.append({"role": "user", "content": transcribed_text})
             
-            # Prepare for streaming response
-            partial_buffer = ""
-            char_count = 0
-            waiting_for_punctuation = False
-            assistant_buffer = ""  # Store the complete response
-            
             print("Assistant: ", end="", flush=True)
             
             # ===== PHASE 4: GENERATING AND SPEAKING RESPONSE =====
+            assistant_buffer = ""  # Store the complete response
+            
             try:
                 # Get streaming response from LLM
-                for token in self.llm_handler.get_streaming_response_with_context(self.conversation_history):
-                    print(token, end="", flush=True)
-                    partial_buffer += token
-                    assistant_buffer += token
-                    char_count += len(token)
-                    
-                    # Once we've accumulated ~100 characters, start waiting for punctuation
-                    if not waiting_for_punctuation and char_count >= 100:
-                        waiting_for_punctuation = True
-                    
-                    if waiting_for_punctuation:
-                        # If we see punctuation, treat that as a sentence boundary
-                        if any(punct in token for punct in [".", "!", "?"]):
-                            # Synthesize and play this sentence
-                            if self.tts_enabled:
-                                audio_array, sample_rate = self.tts_handler.synthesize(partial_buffer)
-                                if audio_array is not None and len(audio_array) > 0:
-                                    self.audio_handler.play_audio(audio_array, sample_rate)
-                            
-                            # Reset partial buffer
-                            partial_buffer = ""
-                            char_count = 0
-                            waiting_for_punctuation = False
+                response_generator = self.llm_handler.get_streaming_response_with_context(self.conversation_history)
+                
+                # Create a wrapper generator that captures tokens for the assistant_buffer
+                # while passing them through to RealtimeTTS
+                def token_capturing_generator(generator):
+                    nonlocal assistant_buffer
+                    for token in generator:
+                        print(token, end="", flush=True)
+                        assistant_buffer += token
+                        yield token
+                
+                # Use the token capturing generator with RealtimeTTS streaming
+                if self.tts_enabled:
+                    # Use the improved RealtimeTTS streaming method
+                    self.speak_llm_streaming(token_capturing_generator(response_generator))
+                else:
+                    # If TTS is disabled, just collect the tokens for the response
+                    for token in response_generator:
+                        print(token, end="", flush=True)
+                        assistant_buffer += token
+                        
             except Exception as e:
                 print(f"\nError during LLM response generation: {e}")
+                import traceback
+                traceback.print_exc()
                 
                 # Add a fallback response if needed
                 if not assistant_buffer:
                     assistant_buffer = "I'm sorry, I encountered an error while generating a response."
                     print("\nFallback response:", assistant_buffer)
-            
-            # Process any remaining text in the buffer
-            if partial_buffer.strip():
-                if self.tts_enabled:
-                    try:
-                        audio_array, sample_rate = self.tts_handler.synthesize(partial_buffer)
-                        if audio_array is not None and len(audio_array) > 0:
-                            self.audio_handler.play_audio(audio_array, sample_rate)
-                    except Exception as e:
-                        print(f"Error synthesizing final text segment: {e}")
             
             # Add the complete response to conversation history
             self.conversation_history.append({"role": "assistant", "content": assistant_buffer})
@@ -510,4 +493,85 @@ class VoiceAssistant:
             import traceback
             traceback.print_exc()
             return "", "I'm sorry, I encountered an unexpected error."
+            
+    def speak_llm_streaming(self, text_generator):
+        """Stream text from an LLM generator directly to speech in real-time.
+        
+        This method is optimized for LLM streaming responses, taking a generator
+        that yields text chunks and playing them as they're received.
+        
+        Args:
+            text_generator: A generator that yields text chunks (e.g., from LLM streaming API)
+            
+        Returns:
+            bool: True if speech was successfully played, False otherwise
+        """
+        if not self.tts_enabled:
+            print("TTS is disabled. Cannot speak the response.")
+            return False
+                
+        try:
+            # Ensure we have the RealtimeTTS package
+            try:
+                from RealtimeTTS import TextToAudioStream, KokoroEngine
+            except ImportError:
+                print("RealtimeTTS not installed. Cannot use streaming speech.")
+                # Convert generator to text and use regular speak method
+                full_text = "".join(list(text_generator))
+                return self.speak(full_text)
+
+            # Make sure TTS handler is initialized
+            if not hasattr(self, 'tts_handler') or self.tts_handler is None:
+                print("TTS handler is not initialized. Cannot stream speech.")
+                return False
+                
+            # Check if KokoroEngine is available
+            if not hasattr(self.tts_handler, 'kokoro_engine') or self.tts_handler.kokoro_engine is None:
+                print("KokoroEngine not available in TTS handler. Falling back to regular speech.")
+                
+                # Convert generator to text
+                full_text = "".join(list(text_generator))
+                
+                # Use regular speak method
+                return self.speak(full_text)
+            
+            # Access the KokoroEngine from the TTS handler
+            engine = self.tts_handler.kokoro_engine
+            
+            print("Creating TextToAudioStream for LLM streaming...")
+            # Create a streaming TTS object
+            stream = TextToAudioStream(engine)
+            
+            print("Feeding text generator to TextToAudioStream...")
+            # Feed text chunks directly to the TTS system as they arrive
+            stream.feed(text_generator)
+            
+            print("Playing audio stream...")
+            # Play the audio directly - this is how RealtimeTTS is designed to be used
+            # It will start playback as soon as enough text has been processed
+            stream.play()
+            
+            print("Audio stream completed.")
+            return True
+            
+        except Exception as e:
+            print(f"Error in streaming LLM speech synthesis: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # Try fallback to regular speech
+            try:
+                # Convert generator to text (recreate the generator if it was consumed)
+                if hasattr(text_generator, '__iter__'):
+                    full_text = "".join(list(text_generator))
+                else:
+                    # If text_generator was not an iterator or was consumed
+                    print("Text generator was consumed or is not iterable. Using a placeholder message.")
+                    full_text = "I'm sorry, there was an error processing the response."
+                
+                # Use regular speak method
+                return self.speak(full_text)
+            except Exception as fallback_error:
+                print(f"Fallback to regular speech also failed: {str(fallback_error)}")
+                return False
             

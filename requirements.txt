@@ -13,6 +13,8 @@ einops>=0.7.0
 # Kokoro TTS (requires system dependency: espeak-ng)
 kokoro>=0.3.4
 espeak-phonemizer>=1.0.0
+# RealtimeTTS for low-latency speech synthesis
+RealtimeTTS[kokoro]>=0.4.47
 # Additional dependencies that might be needed for Fish 1.5
 datasets>=2.14.0
 librosa>=0.10.1

@@ -1,5 +1,4 @@
 import torch
-# from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 import os
 from faster_whisper import WhisperModel
 import numpy as np

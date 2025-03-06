@@ -2,27 +2,42 @@ import torch
 import numpy as np
 from kokoro import KPipeline
 
+# Add RealtimeTTS imports
+from RealtimeTTS import TextToAudioStream, KokoroEngine
+
 import logging
 import os
 import re
 import random
 import time
+import io
+import soundfile as sf
 
 
 class TTSHandler:
     def __init__(self, config=None):
-        config = config.get("kokoro", {})
-        self.voice = config.get("voice")
-        self.base_speech_speed = max(0.5, min(2.0, config.get('speed', 1.0)))  # Clamp between 0.5 and 2.0
+        config = config or {}
+        kokoro_config = config.get("kokoro", {})
+        
+        # Ensure we have default values if config is incomplete
+        self.voice = kokoro_config.get("voice", "af_heart")  # Default to af_heart if no voice specified
+        self.base_speech_speed = max(0.5, min(2.0, kokoro_config.get('speed', 1.3)))  # Clamp between 0.5 and 2.0
         self.speed = self.base_speech_speed
-        self.sample_rate = config.get('sample_rate', 24000)
-        self.device = config.get('device', 'cpu')
+        self.sample_rate = kokoro_config.get('sample_rate', 24000)
+        self.device = kokoro_config.get('device', 'cpu')
+        self.sentence_silence = kokoro_config.get('sentence_silence', 0.2)
         
         # Voice characteristics
         self.available_voices = self._get_available_voices()
+        
+        # If voice is not in available voices, reset to default
+        if self.voice not in self.available_voices:
+            print(f"Warning: Specified voice '{self.voice}' not found. Using default 'af_heart'.")
+            self.voice = "af_heart"
+            
         self.speech_characteristics = {
-            "expressiveness": 1.0,  # 0.0-2.0, how expressive the voice is
-            "variability": 0.2,     # 0.0-1.0, how much the speech speed varies
+            "expressiveness": kokoro_config.get('expressiveness', 1.0),  # 0.0-2.0, how expressive the voice is
+            "variability": kokoro_config.get('variability', 0.2),     # 0.0-1.0, how much the speech speed varies
             "character": self.voice      # Voice character/persona
         }
         
@@ -31,9 +46,20 @@ class TTSHandler:
         print(f"Sample rate set to: {self.sample_rate}")
         print(f"Speech characteristics: {self.speech_characteristics}")
         
-        # Determine language code from voice prefix
-        lang_code = self.voice[0]  # First letter of voice ID determines language
-        self.kokoro_pipeline = KPipeline(lang_code=lang_code)
+        try:
+            # Initialize RealtimeTTS KokoroEngine with valid voice
+            print(f"Creating KokoroEngine with voice: {self.voice}")
+            self.kokoro_engine = KokoroEngine(default_voice=self.voice)
+            self.kokoro_engine.speed = self.base_speech_speed
+            
+            # Determine language code from voice prefix for the fallback pipeline
+            lang_code = self.voice[0]  # First letter of voice ID determines language
+            self.kokoro_pipeline = KPipeline(lang_code=lang_code)
+        except Exception as e:
+            print(f"Error initializing Kokoro engines: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
         
     def set_characteristics(self, **kwargs):
         """Update speech characteristics.
@@ -61,7 +87,9 @@ class TTSHandler:
                 # Special handling for character/voice change
                 if key == "character" and value != self.voice:
                     self.voice = value
-                    # Update language code if needed
+                    # Update RealtimeTTS engine voice
+                    self.kokoro_engine.set_voice(self.voice)
+                    # Update language code if needed for fallback pipeline
                     lang_code = value[0]
                     self.kokoro_pipeline = KPipeline(lang_code=lang_code)
         
@@ -102,14 +130,14 @@ class TTSHandler:
                 sentences = self._split_into_sentences(text)
                 audio_segments = []
                 sample_rate = self.sample_rate
-                silence_duration = kwargs.get('sentence_silence', 0.2)  # Get from kwargs or use default
+                silence_duration = kwargs.get('sentence_silence', self.sentence_silence)  # Get from kwargs or use default
                 
                 for sentence in sentences:
                     if not sentence.strip():
                         continue
                     
                     try:
-                        # Generate speech for each sentence
+                        # Generate speech for each sentence using the direct method
                         audio_segment = self._synthesize_single(sentence)
                         
                         # Ensure audio_segment is not None
@@ -142,8 +170,8 @@ class TTSHandler:
                     print("Warning: No audio segments were generated")
                     return np.zeros(0, dtype=np.float32), sample_rate
             else:
-                # Process short text directly
-                # Set speed for the entire text
+                # Process short text directly with the original method since RealtimeTTS 
+                # is designed to play audio rather than return it
                 audio = self._synthesize_single(text)
                 if audio is None:
                     print(f"Warning: Got None audio for text: {text}")
