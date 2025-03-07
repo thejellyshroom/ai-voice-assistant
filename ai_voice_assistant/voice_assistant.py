@@ -10,7 +10,7 @@ import gc
 import numpy as np
 import queue
 
-
+#TODO: clean up code and split into multiple files/functions
 class VoiceAssistant:
     def __init__(self, 
                  # Configuration dictionaries
