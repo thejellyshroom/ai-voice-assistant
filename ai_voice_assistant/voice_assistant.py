@@ -2,6 +2,7 @@ from .audio_handler import AudioHandler
 from .transcriber import Transcriber
 from .llm_handler import LLMHandler
 from .tts_handler import TTSHandler
+from RealtimeTTS import TextToAudioStream, KokoroEngine
 import os
 import torch
 import threading
@@ -23,28 +24,14 @@ class VoiceAssistant:
         self.llm_config = llm_config or {}
         
         # TTS configuration parameters (prioritize config dict over legacy params)
-        self.tts_model = self.tts_config.get('model_id', 'hexgrad/Kokoro-82M')
+        self.tts_model = self.tts_config.get('model_id')
             
         kokoro_conf = self.tts_config.get('kokoro', {})
         # Set default values for Kokoro parameters if they are not provided
-        self.tts_voice = kokoro_conf.get('voice', 'af_heart')  # Default voice
-        self.speed = kokoro_conf.get('speed', 1.3)  # Default speed
-        self.expressiveness = kokoro_conf.get('expressiveness', 1.0)  # Default expressiveness
-        self.variability = kokoro_conf.get('variability', 0.2)  # Default variability
-        
-        # Ensure kokoro config exists and has the right parameters
-        if 'kokoro' not in self.tts_config:
-            self.tts_config['kokoro'] = {}
-        
-        # Update with the default values we've set
-        if 'voice' not in self.tts_config['kokoro']:
-            self.tts_config['kokoro']['voice'] = self.tts_voice
-        if 'speed' not in self.tts_config['kokoro']:
-            self.tts_config['kokoro']['speed'] = self.speed
-        if 'expressiveness' not in self.tts_config['kokoro']:
-            self.tts_config['kokoro']['expressiveness'] = self.expressiveness
-        if 'variability' not in self.tts_config['kokoro']:
-            self.tts_config['kokoro']['variability'] = self.variability
+        self.tts_voice = kokoro_conf.get('voice')  # Default voice
+        self.speed = kokoro_conf.get('speed')  # Default speed
+        self.expressiveness = kokoro_conf.get('expressiveness')  # Default expressiveness
+        self.variability = kokoro_conf.get('variability')  # Default variability
         
         # ASR configuration parameters
         self.transcription_model = self.asr_config.get('model_id')
@@ -271,49 +258,15 @@ class VoiceAssistant:
         return response
     
     def speak(self, text):
-        """Convert text to speech and play it.
-        
-        Args:
-            text (str): Text to speak
-            
-        Returns:
-            bool: True if speech was successfully played, False otherwise
-        """
-        if not self.tts_enabled:
-            print("TTS is disabled. Cannot speak the response.")
-            return False
-            
         try:
-            # Ensure text is not None
-            if text is None:
-                print("Warning: Received None text to speak")
-                return False
-
-            # Split text into sentences for more natural pauses
-            sentences = self._split_into_sentences(text)
-            
-            for sentence in sentences:
-                # Synthesize and play the sentence
-                audio_array, sample_rate = self.tts_handler.synthesize(sentence)
+            audio_array, sample_rate = self.tts_handler.synthesize(text)
+            self.audio_handler.play_audio(audio_array, sample_rate)
                 
-                # Ensure audio_array is not None
-                if audio_array is None:
-                    print("Warning: Received None audio array from TTS handler")
-                    continue
-                    
-                if len(audio_array) > 0:
-                    self.audio_handler.play_audio(audio_array, sample_rate)
-                    
-                    # Small pause between sentences for more natural speech
-                    time.sleep(0.3)
-                else:
-                    print("Generated audio is empty. Cannot play.")
-            
             # Wait for all audio to finish playing
             if self.audio_handler and self.audio_handler.is_playing:
                 # Let the AudioHandler calculate the appropriate timeout based on the audio duration
                 self.audio_handler.wait_for_playback_complete(timeout=None)
-            
+                
             return True
             
         except Exception as e:
@@ -327,12 +280,7 @@ class VoiceAssistant:
         
         This method utilizes RealtimeTTS's streaming capabilities to provide real-time
         text-to-speech with lower latency, specially optimized for LLM streaming responses.
-        
-        Args:
-            text (str): Text to speak
-            
-        Returns:
-            bool: True if speech was successfully played, False otherwise
+
         """
         if not self.tts_enabled:
             print("TTS is disabled. Cannot speak the response.")
@@ -371,22 +319,6 @@ class VoiceAssistant:
             import traceback
             traceback.print_exc()
             return False
-    
-    def _split_into_sentences(self, text):
-        """Split text into sentences for more natural speech with pauses.
-        
-        Args:
-            text (str): Text to split
-            
-        Returns:
-            list: List of sentences
-        """
-        import re
-        # Split on sentence endings (., !, ?) followed by space or end of string
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        # Remove empty sentences
-        sentences = [s.strip() for s in sentences if s.strip()]
-        return sentences
     
 
     def interact_streaming(self, duration=None, timeout=10, phrase_limit=10):
@@ -510,33 +442,16 @@ class VoiceAssistant:
             print("TTS is disabled. Cannot speak the response.")
             return False
                 
-        try:
-            # Ensure we have the RealtimeTTS package
-            try:
-                from RealtimeTTS import TextToAudioStream, KokoroEngine
-            except ImportError:
-                print("RealtimeTTS not installed. Cannot use streaming speech.")
-                # Convert generator to text and use regular speak method
-                full_text = "".join(list(text_generator))
-                return self.speak(full_text)
-
+        try:    
             # Make sure TTS handler is initialized
             if not hasattr(self, 'tts_handler') or self.tts_handler is None:
                 print("TTS handler is not initialized. Cannot stream speech.")
                 return False
-                
-            # Check if KokoroEngine is available
-            if not hasattr(self.tts_handler, 'kokoro_engine') or self.tts_handler.kokoro_engine is None:
-                print("KokoroEngine not available in TTS handler. Falling back to regular speech.")
-                
-                # Convert generator to text
-                full_text = "".join(list(text_generator))
-                
-                # Use regular speak method
-                return self.speak(full_text)
             
             # Access the KokoroEngine from the TTS handler
             engine = self.tts_handler.kokoro_engine
+            engine.speed = self.tts_handler.speed
+
             
             print("Creating TextToAudioStream for LLM streaming...")
             # Create a streaming TTS object
@@ -547,9 +462,15 @@ class VoiceAssistant:
             stream.feed(text_generator)
             
             print("Playing audio stream...")
-            # Play the audio directly - this is how RealtimeTTS is designed to be used
-            # It will start playback as soon as enough text has been processed
-            stream.play()
+            # Play the audio with optimized parameters for conversational AI
+            stream.play(
+                fast_sentence_fragment=True,                     # Process sentence fragments faster
+                fast_sentence_fragment_allsentences=True,        # Apply to all sentences
+                fast_sentence_fragment_allsentences_multiple=True, # Allow yielding multiple fragments
+                minimum_first_fragment_length=5,                 # Start speaking sooner
+                force_first_fragment_after_words=8,              # Force start after 8 words
+                buffer_threshold_seconds=0.1                     # Lower buffering for more responsive playback
+            )
             
             print("Audio stream completed.")
             return True
