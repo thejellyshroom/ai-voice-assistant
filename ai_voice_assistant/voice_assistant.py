@@ -188,31 +188,6 @@ class VoiceAssistant:
             if audio_file is None:
                 print("No audio detected or recording failed for reasons other than timeout")
                 return ""
-            
-            # Additional validation for the audio file
-            try:
-                if not os.path.exists(audio_file):
-                    print(f"Warning: Audio file {audio_file} does not exist")
-                    return ""
-                    
-                file_size = os.path.getsize(audio_file)
-                if file_size == 0:
-                    print(f"Warning: Audio file {audio_file} is empty (0 bytes)")
-                    return ""
-                    
-                # Get min_file_size from config or use default
-                min_file_size = 1000
-                if self.asr_config and 'audio_validation' in self.asr_config:
-                    min_file_size = self.asr_config['audio_validation'].get('min_file_size', 1000)
-                
-                if file_size < min_file_size:  # File is suspiciously small
-                    print(f"Warning: Audio file {audio_file} is suspiciously small ({file_size} bytes < {min_file_size} minimum)")
-                    # Don't attempt to transcribe too small files
-                    print("Audio file is too small to contain meaningful speech. Skipping transcription.")
-                    return ""
-            except Exception as e:
-                print(f"Error validating audio file: {str(e)}")
-                return ""
                 
             # Try to transcribe with additional error handling
             try:
@@ -446,6 +421,8 @@ class VoiceAssistant:
             char_count = 0
             waiting_for_punctuation = False
             assistant_buffer = ""  # Store the complete response
+            word_count = 0         # Track number of words
+            initial_words_done = False  # Flag to track if we've processed the first 8 words
             
             print("Assistant: ", end="", flush=True)
             
@@ -458,11 +435,26 @@ class VoiceAssistant:
                     assistant_buffer += token
                     char_count += len(token)
                     
-                    # Once we've accumulated ~100 characters, start waiting for punctuation
-                    if not waiting_for_punctuation and char_count >= 100:
-                        waiting_for_punctuation = True
-                    
-                    if waiting_for_punctuation:
+                    # Count words when spaces are encountered
+                    if not initial_words_done:
+                        # Count words by splitting the current buffer
+                        # This is more accurate than just counting spaces in the token
+                        words_so_far = len(partial_buffer.split())
+                        if words_so_far >= 8 or any(punct in token for punct in [".", "!", "?"]):
+                            # Synthesize and play initial words immediately
+                            if self.tts_enabled:
+                                print(f"\n[Synthesizing initial {words_so_far} words]")
+                                audio_array, sample_rate = self.tts_handler.synthesize(partial_buffer)
+                                if audio_array is not None and len(audio_array) > 0:
+                                    self.audio_handler.play_audio(audio_array, sample_rate)
+                            
+                            # Reset partial buffer and mark initial words as done
+                            partial_buffer = ""
+                            char_count = 0
+                            initial_words_done = True
+                            waiting_for_punctuation = False
+                    # After initial words are processed
+                    elif waiting_for_punctuation:
                         # If we see punctuation, treat that as a sentence boundary
                         if any(punct in token for punct in [".", "!", "?"]):
                             # Synthesize and play this sentence
@@ -475,6 +467,11 @@ class VoiceAssistant:
                             partial_buffer = ""
                             char_count = 0
                             waiting_for_punctuation = False
+                    # If we're not waiting for punctuation yet but initial words are done
+                    elif initial_words_done:
+                        # Once we've accumulated ~100 characters, start waiting for punctuation
+                        if char_count >= 100:
+                            waiting_for_punctuation = True
             except Exception as e:
                 print(f"\nError during LLM response generation: {e}")
                 
@@ -499,7 +496,6 @@ class VoiceAssistant:
             # ===== PHASE 5: ENSURE ALL AUDIO COMPLETES BEFORE NEXT ITERATION =====
             # Wait for all playback to complete before starting next cycle
             if self.audio_handler and self.tts_enabled:
-                # Let the AudioHandler calculate the appropriate timeout based on the audio duration
                 self.audio_handler.wait_for_playback_complete(timeout=None)
             
             # Return the transcribed text and assistant response

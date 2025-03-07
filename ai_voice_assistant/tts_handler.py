@@ -13,13 +13,11 @@ class TTSHandler:
     def __init__(self, config=None):
         config = config.get("kokoro", {})
         self.voice = config.get("voice")
-        self.base_speech_speed = max(0.5, min(2.0, config.get('speed', 1.0)))  # Clamp between 0.5 and 2.0
-        self.speed = self.base_speech_speed
+        self.speed = config.get('speed')
         self.sample_rate = config.get('sample_rate', 24000)
         self.device = config.get('device', 'cpu')
         
         # Voice characteristics
-        self.available_voices = self._get_available_voices()
         self.speech_characteristics = {
             "expressiveness": 1.0,  # 0.0-2.0, how expressive the voice is
             "variability": 0.2,     # 0.0-1.0, how much the speech speed varies
@@ -27,7 +25,7 @@ class TTSHandler:
         }
         
         print(f"Initializing Kokoro TTS with voice: {self.voice}")
-        print(f"Base speech speed set to: {self.base_speech_speed}x")
+        print(f"Base speech speed set to: {self.speed}x")
         print(f"Sample rate set to: {self.sample_rate}")
         print(f"Speech characteristics: {self.speech_characteristics}")
         
@@ -66,15 +64,6 @@ class TTSHandler:
                     self.kokoro_pipeline = KPipeline(lang_code=lang_code)
         
         print(f"Updated speech characteristics: {self.speech_characteristics}")
-        
-    def _get_available_voices(self):
-        """Get list of available Kokoro voices."""
-        # These are common Kokoro voices - the actual list will be overridden by config if available
-        return [
-            "af_heart", "af_nicole", "af_spirit", "af_alloy", "af_aoede", "af_bella", "af_jessica", 
-            "af_kore", "af_nova", "af_river", "af_sarah", "af_sky",
-            "e_asif", "e_cassie", "e_emma", "e_jack", "e_jeremy", "e_josh", "e_lucy", "e_maria"
-        ]
 
         
     def synthesize(self, text, **kwargs):
