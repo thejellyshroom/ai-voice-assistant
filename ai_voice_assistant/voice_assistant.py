@@ -432,11 +432,6 @@ class VoiceAssistant:
         This method is optimized for LLM streaming responses, taking a generator
         that yields text chunks and playing them as they're received.
         
-        Args:
-            text_generator: A generator that yields text chunks (e.g., from LLM streaming API)
-            
-        Returns:
-            bool: True if speech was successfully played, False otherwise
         """
         if not self.tts_enabled:
             print("TTS is disabled. Cannot speak the response.")
@@ -463,14 +458,14 @@ class VoiceAssistant:
             
             print("Playing audio stream...")
             # Play the audio with optimized parameters for conversational AI
-            stream.play(
+            stream.play_async(
+                tokenizer="nltk",
                 fast_sentence_fragment=True,                     # Process sentence fragments faster
                 fast_sentence_fragment_allsentences=True,        # Apply to all sentences
                 fast_sentence_fragment_allsentences_multiple=True, # Allow yielding multiple fragments
-                minimum_first_fragment_length=5,                 # Start speaking sooner
-                force_first_fragment_after_words=8,              # Force start after 8 words
-                buffer_threshold_seconds=0.1                     # Lower buffering for more responsive playback
             )
+            while stream.is_playing():
+                time.sleep(0.1)
             
             print("Audio stream completed.")
             return True
