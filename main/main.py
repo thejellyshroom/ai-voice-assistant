@@ -91,7 +91,7 @@ def main():
     # Start the interaction loop
     try:
         while True:
-            assistant.interact_streaming(
+            assistant.interaction_loop(
                 duration=args.fixed_duration, 
                 timeout=args.timeout,
                 phrase_limit=args.phrase_limit,

@@ -219,7 +219,7 @@ class VoiceAssistant:
             traceback.print_exc()
             return False
     
-    def interact_streaming(self, duration=None, timeout=10, phrase_limit=10):
+    def interaction_loop(self, duration=None, timeout=10, phrase_limit=10):
         """Record audio, transcribe, process with streaming response.
         
         Args:
