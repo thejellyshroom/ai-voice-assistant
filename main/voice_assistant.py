@@ -2,13 +2,11 @@ from components.audio_handler import AudioHandler
 from components.transcriber import Transcriber
 from components.llm_handler import LLMHandler
 from components.tts_handler import TTSHandler
+from helper_functions import *
 import os
 import torch
-import threading
 import time
-import gc
-import numpy as np
-import queue
+import traceback
 
 #TODO: clean up code and split into multiple files/functions
 class VoiceAssistant:
@@ -22,37 +20,33 @@ class VoiceAssistant:
         self.tts_config = tts_config or {}
         self.llm_config = llm_config or {}
         
-        # TTS configuration parameters (prioritize config dict over legacy params)
+        # Extract key configuration parameters
         self.tts_model = self.tts_config.get('model_id')
-            
         kokoro_conf = self.tts_config.get('kokoro', {})
         self.tts_voice = kokoro_conf.get('voice')
         self.speed = kokoro_conf.get('speed')
         self.expressiveness = kokoro_conf.get('expressiveness')
         self.variability = kokoro_conf.get('variability')
-        
-        # ASR configuration parameters
         self.transcription_model = self.asr_config.get('model_id')
         
-        # LLM configuration parameters
         local_conf = self.llm_config.get('local', {})
         self.temperature = local_conf.get('temperature')
         self.top_p = local_conf.get('top_p')
         self.top_k = local_conf.get('top_k')
         
-        # Components will be initialized on demand
+        # Component placeholders
         self.audio_handler = None
         self.transcriber = None
         self.llm_handler = None
         self.tts_handler = None
         self.tts_enabled = False
         
-        # Store conversation history
+        # Conversation history
         self.conversation_history = [
             {"role": "system", "content": "You are a helpful AI."}
         ]
         
-        # Initialize all components
+        # Initialize components
         self.load_all_components()
         
     def load_all_components(self):
@@ -66,39 +60,21 @@ class VoiceAssistant:
         print("\nAI Voice Assistant initialized!")
         print(f"Transcription model: {self.transcription_model}")
         
-        # Determine device display
+        # Display device information
         if self.transcriber and hasattr(self.transcriber, 'device'):
             device = "CUDA" if torch.cuda.is_available() else "CPU"
         else:
             device = getattr(self.transcriber, 'device', 'unknown')
         print(f"Device: {device}")
         
-        #Print tts information
         print(f"TTS Model: {self.tts_model}")
         print(f"TTS Voice: {self.tts_voice}")
         print(f"Speech Speed: {self.speed}x")
     
-    def _unload_component(self, component_name):
-        """Unload a component to free up memory.
-        
-        Args:
-            component_name (str): Name of the component to unload
-        """
-        component = getattr(self, component_name)
-        if component:
-            print(f"Unloading existing {component_name}...")
-            delattr(self, component_name)
-            setattr(self, component_name, None)
-            gc.collect()
-            print(f"{component_name} unloaded successfully.")
-        else:
-            print(f"No existing {component_name} found")
-    
     def load_audio_handler(self):
         """Load the audio handler component."""
-        self._unload_component("audio_handler")
+        self.audio_handler = unload_component(self.audio_handler, "audio_handler")
         try:
-            # Pass the ASR config to the AudioHandler for audio validation parameters
             self.audio_handler = AudioHandler(config=self.asr_config)
             print("Audio handler initialized successfully.")
         except Exception as e:
@@ -106,44 +82,30 @@ class VoiceAssistant:
     
     def load_transcriber(self):
         """Load the transcription component."""
-        self._unload_component("transcriber")
+        self.transcriber = unload_component(self.transcriber, "transcriber")
         try:
-            # Use model_id from config or the class attribute
             model_id = self.transcription_model
             print(f"Initializing transcriber with model: {model_id}")
             self.transcriber = Transcriber(config=self.asr_config)
             print("Transcriber initialized successfully.")
-
         except Exception as e:
             print(f"Error initializing transcriber: {str(e)}")
-            import traceback
             traceback.print_exc()
-            self.transcriber = None  # Ensure it's None if initialization failed
+            self.transcriber = None
     
     def load_llm_handler(self):
         """Load the LLM handler."""
         print("Loading LLM handler...")
         if self.llm_handler is None:
-            # Pass the full config structure to LLMHandler
             self.llm_handler = LLMHandler(config=self.llm_config)
         
     def load_tts_handler(self):
         """Load the TTS handler."""
         print("Loading TTS handler...")
-        self._unload_component("tts_handler")
+        self.tts_handler = unload_component(self.tts_handler, "tts_handler")
         
         try:
-            # Prepare TTS parameters from config or legacy params
-            tts_params = {
-                'model_id': self.tts_model,
-                'voice': self.tts_voice,
-                'speed': self.speed
-            }
-                
-            print(f"Initializing TTS with: {tts_params}")
             self.tts_handler = TTSHandler(self.tts_config)
-
-            
             self.tts_enabled = True
             print("TTS handler loaded successfully.")
         except Exception as e:
@@ -154,63 +116,45 @@ class VoiceAssistant:
         """Record audio and transcribe it.
         
         Args:
-            duration (int, optional): Fixed recording duration in seconds (legacy mode)
+            duration (int, optional): Fixed recording duration in seconds
             timeout (int, optional): Maximum seconds to wait before giving up
             
         Returns:
             str: Transcribed text or error code
         """
         try:
-            # Make sure any ongoing playback is completely finished
+            # Ensure any ongoing playback is stopped
             if self.audio_handler:
                 if self.audio_handler.is_playing:
                     print("Stopping any ongoing audio playback before listening...")
-                    # Stop playback and wait for it to complete
                     self.audio_handler.stop_playback()
                     self.audio_handler.wait_for_playback_complete()
                 
                 print("Starting new listening session...")
                 audio_file = self.audio_handler.listen_for_speech(
                     timeout=timeout,
-                    stop_playback=True  # Always stop playback before listening
+                    stop_playback=True
                 )
                 
-            # Immediate early return for timeout errors - skip all transcription logic
+            # Return early for timeout errors
             if audio_file == "low_energy":
                 print("Timeout error detected: speech volume too low")
                 return "low_energy"
             elif audio_file == "TIMEOUT_ERROR":
                 print("Timeout error detected: no speech detected within 5 seconds")
                 return "TIMEOUT_ERROR"
-            
-            # For other types of recording failures
-            if audio_file is None:
-                print("No audio detected or recording failed for reasons other than timeout")
-                return ""
                 
-            # Try to transcribe with additional error handling
-            try:
-                # Check if transcriber exists, reload it if not
-                if self.transcriber is None:
-                    print("Transcriber not initialized. Attempting to reload...")
-                    self.load_transcriber()
-                    
-                # Double-check transcriber exists after attempted reload
-                if self.transcriber is None:
-                    print("Failed to initialize transcriber. Cannot transcribe audio.")
-                    return ""
-                    
+            # Transcribe the audio
+            try:    
                 transcribed_text = self.transcriber.transcribe(audio_file)
                 print(f"Transcription successful: {len(transcribed_text)} characters")
                 return transcribed_text
             except Exception as e:
                 print(f"Error during transcription: {str(e)}")
-                import traceback
                 traceback.print_exc()
                 return ""
         except Exception as e:
             print(f"Unexpected error in listen method: {str(e)}")
-            import traceback
             traceback.print_exc()
             return ""
     
@@ -224,26 +168,12 @@ class VoiceAssistant:
             str: LLM's response
         """
         query = text[-1]
-        # Use RAG for responses that might benefit from the knowledge base
-        if self.should_use_rag(query["content"]):  # You'll need to implement this method
+        # Use RAG for knowledge-based queries
+        if should_use_rag(query["content"]):
             response = self.llm_handler.get_rag_response(query["content"], self.conversation_history[:-1])
         else:
             response = self.llm_handler.get_response(self.conversation_history)
-        
         return response
-
-    def should_use_rag(self, text: str) -> bool:
-        """Determine if a query should use RAG.
-        
-        Args:
-            text (str): User's query
-            
-        Returns:
-            bool: True if RAG should be used
-        """
-        # Simple heuristic: use RAG for questions or when specific keywords are present
-        question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'explain', 'tell me about'}
-        return any(word in text.lower() for word in question_words)
     
     def speak(self, text):
         """Convert text to speech and play it.
@@ -252,7 +182,7 @@ class VoiceAssistant:
             text (str): Text to speak
             
         Returns:
-            bool: True if speech was successfully played, False otherwise
+            bool: True if speech was successfully played
         """
         if not self.tts_enabled:
             print("TTS is disabled. Cannot speak the response.")
@@ -265,120 +195,33 @@ class VoiceAssistant:
                 return False
 
             # Split text into sentences for more natural pauses
-            sentences = self._split_into_sentences(text)
+            sentences = split_into_sentences(text)
             
             for sentence in sentences:
-                # Synthesize and play the sentence
+                # Synthesize and play each sentence
                 audio_array, sample_rate = self.tts_handler.synthesize(sentence)
-                
-                # Ensure audio_array is not None
-                if audio_array is None:
-                    print("Warning: Received None audio array from TTS handler")
-                    continue
                     
                 if len(audio_array) > 0:
                     self.audio_handler.play_audio(audio_array, sample_rate)
-                    
-                    # Small pause between sentences for more natural speech
+                    # Small pause between sentences
                     time.sleep(0.3)
                 else:
                     print("Generated audio is empty. Cannot play.")
             
             # Wait for all audio to finish playing
             if self.audio_handler and self.audio_handler.is_playing:
-                # Let the AudioHandler calculate the appropriate timeout based on the audio duration
                 self.audio_handler.wait_for_playback_complete(timeout=None)
             
             return True
             
         except Exception as e:
             print(f"Error in speech synthesis: {str(e)}")
-            import traceback
             traceback.print_exc()
             return False
     
-    def speak_streaming(self, text):
-        """Convert text to speech with streaming output.
-        
-        This method splits text into sentences and streams them as they're synthesized,
-        similar to how neurosama.py handles TTS output.
-        
-        Args:
-            text (str): Text to speak
-            
-        Returns:
-            bool: True if speech was successfully played, False otherwise
-        """
-        initial_buffer = "..."  # Helps prevent first word cutoff
-        sentences = self._split_into_sentences(initial_buffer + text)
-    
-        for i, sentence in enumerate(sentences):
-            if i == 0 and sentence == "...":  # Skip our buffer
-                continue
-
-            if not self.tts_enabled:
-                print("TTS is disabled. Cannot speak the response.")
-                return False
-                
-        try:
-            # Ensure text is not None
-            if text is None:
-                print("Warning: Received None text to speak")
-                return False
-            
-            # Split text into sentences for more natural streaming
-            sentences = self._split_into_sentences(text)
-            
-            for sentence in sentences:
-                
-                # Synthesize and play the sentence
-                audio_array, sample_rate = self.tts_handler.synthesize(sentence)
-                
-                # Ensure audio_array is not None
-                if audio_array is None:
-                    print("Warning: Received None audio array from TTS handler")
-                    continue
-                    
-                if len(audio_array) > 0:
-                    self.audio_handler.play_audio(audio_array, sample_rate)
-                    
-                    # Small pause between sentences for more natural speech
-                    time.sleep(0.3)
-                else:
-                    print("Generated audio is empty. Cannot play.")
-            
-            # Wait for all audio to finish playing
-            if self.audio_handler and self.audio_handler.is_playing:
-                # Let the AudioHandler calculate the appropriate timeout based on the audio duration
-                self.audio_handler.wait_for_playback_complete(timeout=None)
-            
-            return True
-            
-        except Exception as e:
-            print(f"Error in speech synthesis: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            return False
-    
-    def _split_into_sentences(self, text):
-        """Split text into sentences for more natural speech with pauses.
-        
-        Args:
-            text (str): Text to split
-            
-        Returns:
-            list: List of sentences
-        """
-        import re
-        # Split on sentence endings (., !, ?) followed by space or end of string
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        # Remove empty sentences
-        sentences = [s.strip() for s in sentences if s.strip()]
-        return sentences
-    
-
     def interact_streaming(self, duration=None, timeout=10, phrase_limit=10):
         """Record audio, transcribe, process with streaming response.
+        
         Args:
             duration (int, optional): Fixed recording duration in seconds
             timeout (int, optional): Maximum seconds to wait before giving up
@@ -388,132 +231,53 @@ class VoiceAssistant:
             tuple: (transcribed_text, ai_response)
         """
         try:
-            # ===== PHASE 1: PREPARATION =====
-            # Ensure all audio playback is completely stopped
+            # Ensure all audio playback is stopped
             if self.audio_handler:
                 self.audio_handler.stop_playback()
             
-            # ===== PHASE 2: LISTENING FOR USER INPUT =====
+            # Listen for user input
             print("\nListening for your voice...")
             transcribed_text = self.listen(duration=duration, timeout=timeout)
             
-            # Handle the case where no speech was detected
+            # Handle no speech detected
             if not transcribed_text or len(transcribed_text.strip()) < 2:
                 ai_response = "Seems like you didn't say anything."
                 print("\nAssistant:", ai_response)
-                
-                # Only speak the response if TTS is enabled
-                if self.tts_enabled:
-                    self.speak(ai_response)
-                    
-                    # Wait for all audio playback to complete
-                    if self.audio_handler:
-                        self.audio_handler.wait_for_playback_complete()
-                
                 return "", ai_response
             
             if transcribed_text == "TIMEOUT_ERROR":
                 ai_response = "Time out error occurred"
                 print("\nAssistant:", ai_response)
-                
-                # Only speak the response if TTS is enabled
-                if self.tts_enabled:
-                    self.speak(ai_response)
+                return transcribed_text, ai_response
             
-            # ===== PHASE 3: PROCESSING USER INPUT =====    
+            # Display transcribed text    
             print("\nYou said:", transcribed_text)
             
             # Add user message to conversation history
             self.conversation_history.append({"role": "user", "content": transcribed_text})
             
-            # Prepare for streaming response
-            partial_buffer = ""
-            char_count = 0
-            waiting_for_punctuation = False
-            assistant_buffer = ""  # Store the complete response
-            word_count = 0         # Track number of words
-            initial_words_done = False  # Flag to track if we've processed the first 8 words
-            
-            print("Assistant: ", end="", flush=True)
-            
-            # ===== PHASE 4: GENERATING AND SPEAKING RESPONSE =====
             try:
-                # Get streaming response from LLM
-                for token in self.process_and_respond(self.conversation_history):
-                    print(token, end="", flush=True)
-                    partial_buffer += token
-                    assistant_buffer += token
-                    char_count += len(token)
-                    
-                    # Count words when spaces are encountered
-                    if not initial_words_done:
-                        # Count words by splitting the current buffer
-                        # This is more accurate than just counting spaces in the token
-                        words_so_far = len(partial_buffer.split())
-                        if words_so_far >= 8 or any(punct in token for punct in [".", "!", "?"]):
-                            # Synthesize and play initial words immediately
-                            if self.tts_enabled:
-                                print(f"\n[Synthesizing initial {words_so_far} words]")
-                                audio_array, sample_rate = self.tts_handler.synthesize(partial_buffer)
-                                if audio_array is not None and len(audio_array) > 0:
-                                    self.audio_handler.play_audio(audio_array, sample_rate)
-                            
-                            # Reset partial buffer and mark initial words as done
-                            partial_buffer = ""
-                            char_count = 0
-                            initial_words_done = True
-                            waiting_for_punctuation = False
-                    # After initial words are processed
-                    elif waiting_for_punctuation:
-                        # If we see punctuation, treat that as a sentence boundary
-                        if any(punct in token for punct in [".", "!", "?"]):
-                            # Synthesize and play this sentence
-                            if self.tts_enabled:
-                                audio_array, sample_rate = self.tts_handler.synthesize(partial_buffer)
-                                if audio_array is not None and len(audio_array) > 0:
-                                    self.audio_handler.play_audio(audio_array, sample_rate)
-                            
-                            # Reset partial buffer
-                            partial_buffer = ""
-                            char_count = 0
-                            waiting_for_punctuation = False
-                    # If we're not waiting for punctuation yet but initial words are done
-                    elif initial_words_done:
-                        # Once we've accumulated ~100 characters, start waiting for punctuation
-                        if char_count >= 100:
-                            waiting_for_punctuation = True
+                # Get streaming response and process it
+                response_stream = self.process_and_respond(self.conversation_history)
+                assistant_buffer = process_streaming_response(
+                    self.tts_handler, 
+                    self.audio_handler, 
+                    response_stream, 
+                    self.tts_enabled
+                )
             except Exception as e:
-                print(f"\nError during LLM response generation: {e}")
-                
-                # Add a fallback response if needed
-                if not assistant_buffer:
-                    assistant_buffer = "I'm sorry, I encountered an error while generating a response."
-                    print("\nFallback response:", assistant_buffer)
+                print(f"\nError during response generation: {e}")
+                assistant_buffer = "I'm sorry, I encountered an error while generating a response."
+                print("\nFallback response:", assistant_buffer)
             
-            # Process any remaining text in the buffer
-            if partial_buffer.strip():
-                if self.tts_enabled:
-                    try:
-                        audio_array, sample_rate = self.tts_handler.synthesize(partial_buffer)
-                        if audio_array is not None and len(audio_array) > 0:
-                            self.audio_handler.play_audio(audio_array, sample_rate)
-                    except Exception as e:
-                        print(f"Error synthesizing final text segment: {e}")
-            
-            # Add the complete response to conversation history
-            self.conversation_history.append({"role": "assistant", "content": assistant_buffer})
-            
-            # ===== PHASE 5: ENSURE ALL AUDIO COMPLETES BEFORE NEXT ITERATION =====
-            # Wait for all playback to complete before starting next cycle
+            # Wait for all audio to complete before returning
             if self.audio_handler and self.tts_enabled:
                 self.audio_handler.wait_for_playback_complete(timeout=None)
             
-            # Return the transcribed text and assistant response
             return transcribed_text, assistant_buffer
             
         except Exception as e:
             print(f"Unexpected error in streaming interaction: {str(e)}")
-            import traceback
             traceback.print_exc()
             return "", "I'm sorry, I encountered an unexpected error."
             

@@ -55,14 +55,12 @@ class LLMHandler:
         Args:
             query (str): The user's query
             messages (list): Conversation history
-            
         Yields:
             str: Chunks of the LLM's response as they are generated
         """
         
         # Get embedding for the query
         query_embedding = ollama.embed(model="nomic-embed-text", input=query)['embeddings']
-        relateddocs = '\n\n'.join(self.rag_collection.query(query_embeddings=query_embedding, n_results=10)['documents'][0])
         
         # Retrieve relevant documents
         results = self.rag_collection.query(
@@ -72,38 +70,18 @@ class LLMHandler:
         
         # Combine retrieved documents
         context = "\n\n".join(results['documents'][0])
-        
-        # Create RAG-enhanced prompt
-#         rag_prompt = f"""Context information is below.
-# ---------------------
-# {context}
-# ---------------------
-# Given the context information and not prior knowledge, answer the following question:
-# {query}
-# """
-        rag_prompt = f"{query} - Answer that question using the following text as a resource: {context}"
 
-        
+        rag_prompt = f"""Context information is below.
+                    ---------------------
+                    {context}
+                    ---------------------
+                    Given the context information and not prior knowledge, answer the following question:
+                    {query}
+                    """
+
         # Add RAG prompt to messages
         rag_messages = messages.copy()
         rag_messages.append({"role": "user", "content": rag_prompt})
         
         # Get response using the enhanced context
-        print(f"responding with rag after searching: {results} ")
         return self.get_response(rag_messages)
-    
-
-# chromaclient = chromadb.HttpClient(host="localhost", port=8000)
-# collection = chromaclient.create_collection(name="jellyshroom")
-
-# query = " ".join(sys.argv[1:])
-# queryembed = ollama.embed(model="nomic-embed-text", input=query)['embeddings']
-
-# relateddocs = '\n\n'.join(collection.query(query_embeddings=queryembed, n_results=10)['documents'][0])
-# prompt = f"{query} - Answer that question using the following text as a resource: {relateddocs}"
-# noragoutput = ollama.generate(model="mistral", prompt=query, stream=False)
-# print(f"Answered without RAG: {noragoutput['response']}")
-# print("---")
-# ragoutput = ollama.generate(model="llama3.1", prompt=prompt, stream=False)
-
-# print(f"Answered with RAG: {ragoutput['response']}")

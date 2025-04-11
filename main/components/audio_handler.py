@@ -90,7 +90,6 @@ class AudioHandler:
                         )
                         
                         # Before saving the file, check if we actually got meaningful audio
-                        audio_as_numpy = np.frombuffer(audio_data.frame_data, dtype=np.int16)
                         audio_duration = len(audio_data.frame_data) / (2 * 16000)
                         audio_energy = self.recognizer.energy_threshold
                         
@@ -166,8 +165,8 @@ class AudioHandler:
         self.total_audio_duration += audio_duration
         self.last_audio_timestamp = time.time()
         
-        # Log audio duration for debugging
-        print(f"Adding audio segment: {audio_duration:.2f}s, total buffered: {self.total_audio_duration:.2f}s")
+        # # Log audio duration for debugging
+        # print(f"Adding audio segment: {audio_duration:.2f}s, total buffered: {self.total_audio_duration:.2f}s")
         
         # Start the playback thread if it's not already running
         self.start_playback_thread(sample_rate)
