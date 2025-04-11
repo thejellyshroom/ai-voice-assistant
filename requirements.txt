@@ -1,7 +1,9 @@
 torch>=2.0.0
 torchaudio>=2.0.0
-transformers>=4.37.0
+transformers>=4.43.0
+peft >=0.10.0
 ollama>=0.1.0
+chromadb
 pyaudio>=0.2.13
 numpy>=1.24.0
 SpeechRecognition>=3.10.0
@@ -13,13 +15,7 @@ einops>=0.7.0
 # Kokoro TTS (requires system dependency: espeak-ng)
 kokoro>=0.3.4
 espeak-phonemizer>=1.0.0
-# Additional dependencies that might be needed for Fish 1.5
-datasets>=2.14.0
-librosa>=0.10.1
-scipy>=1.10.0
-ffmpeg-python>=0.2.0
 # Dependencies for examples
-gradio>=4.0.0
 pandas>=2.0.0
 pydantic>=2.0.0
 # Faster Whisper for improved speech recognition
