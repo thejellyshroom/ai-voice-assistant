@@ -1,7 +1,7 @@
-from .audio_handler import AudioHandler
-from .transcriber import Transcriber
-from .llm_handler import LLMHandler
-from .tts_handler import TTSHandler
+from components.audio_handler import AudioHandler
+from components.transcriber import Transcriber
+from components.llm_handler import LLMHandler
+from components.tts_handler import TTSHandler
 import os
 import torch
 import threading
@@ -39,7 +39,6 @@ class VoiceAssistant:
         self.temperature = local_conf.get('temperature')
         self.top_p = local_conf.get('top_p')
         self.top_k = local_conf.get('top_k')
-        self.creativity = local_conf.get('creativity')
         
         # Components will be initialized on demand
         self.audio_handler = None
@@ -50,7 +49,7 @@ class VoiceAssistant:
         
         # Store conversation history
         self.conversation_history = [
-            {"role": "system", "content": "You are a helpful AI voice assistant."}
+            {"role": "system", "content": "You are a helpful AI."}
         ]
         
         # Initialize all components
@@ -74,10 +73,10 @@ class VoiceAssistant:
             device = getattr(self.transcriber, 'device', 'unknown')
         print(f"Device: {device}")
         
+        #Print tts information
         print(f"TTS Model: {self.tts_model}")
         print(f"TTS Voice: {self.tts_voice}")
         print(f"Speech Speed: {self.speed}x")
-        print("Press Ctrl+C to exit")
     
     def _unload_component(self, component_name):
         """Unload a component to free up memory.
@@ -224,16 +223,27 @@ class VoiceAssistant:
         Returns:
             str: LLM's response
         """
-        # Add user message to conversation history
-        self.conversation_history.append({"role": "user", "content": text})
-        
-        # Get response using conversation history
-        response = self.llm_handler.get_streaming_response_with_context(self.conversation_history)
-        
-        # Add assistant response to conversation history
-        self.conversation_history.append({"role": "assistant", "content": response})
+        query = text[-1]
+        # Use RAG for responses that might benefit from the knowledge base
+        if self.should_use_rag(query["content"]):  # You'll need to implement this method
+            response = self.llm_handler.get_rag_response(query["content"], self.conversation_history[:-1])
+        else:
+            response = self.llm_handler.get_response(self.conversation_history)
         
         return response
+
+    def should_use_rag(self, text: str) -> bool:
+        """Determine if a query should use RAG.
+        
+        Args:
+            text (str): User's query
+            
+        Returns:
+            bool: True if RAG should be used
+        """
+        # Simple heuristic: use RAG for questions or when specific keywords are present
+        question_words = {'what', 'who', 'where', 'when', 'why', 'how', 'explain', 'tell me about'}
+        return any(word in text.lower() for word in question_words)
     
     def speak(self, text):
         """Convert text to speech and play it.
@@ -429,7 +439,7 @@ class VoiceAssistant:
             # ===== PHASE 4: GENERATING AND SPEAKING RESPONSE =====
             try:
                 # Get streaming response from LLM
-                for token in self.llm_handler.get_streaming_response_with_context(self.conversation_history):
+                for token in self.process_and_respond(self.conversation_history):
                     print(token, end="", flush=True)
                     partial_buffer += token
                     assistant_buffer += token

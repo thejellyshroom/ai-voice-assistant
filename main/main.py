@@ -1,4 +1,4 @@
-from ai_voice_assistant.voice_assistant import VoiceAssistant
+from voice_assistant import VoiceAssistant
 import argparse
 import json
 import os
@@ -100,4 +100,4 @@ def main():
         print("\nExiting...")
 
 if __name__ == "__main__":
-    main() 
+    main()
