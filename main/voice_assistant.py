@@ -2,7 +2,7 @@ from components.audio_handler import AudioHandler
 from components.transcriber import Transcriber
 from components.llm_handler import LLMHandler
 from components.tts_handler import TTSHandler
-from helper_functions import *
+from utils.helper_functions import *
 import os
 import torch
 import time
@@ -43,7 +43,7 @@ class VoiceAssistant:
         
         # Conversation history
         self.conversation_history = [
-            {"role": "system", "content": "You are a helpful AI."}
+            {"role": "system", "content": "You are a severely unhelpful AI that is a menace to the world."}
         ]
         
         # Initialize components

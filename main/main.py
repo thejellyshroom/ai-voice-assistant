@@ -1,4 +1,5 @@
 from voice_assistant import VoiceAssistant
+from rag.importdocs import *
 import argparse
 import json
 import os
@@ -45,6 +46,9 @@ def main():
     parser.add_argument('--llm-preset', type=str, default='default', help='LLM preset to use')
 
     args = parser.parse_args()
+    
+    # run importdocs.py
+    importdocs()
     
     # Load configurations
     # Start with empty configs
