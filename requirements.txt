@@ -2,6 +2,8 @@ torch>=2.0.0
 torchaudio>=2.0.0
 transformers>=4.43.0
 peft >=0.10.0
+datasets
+evaluate
 ollama>=0.1.0
 chromadb
 pyaudio>=0.2.13
