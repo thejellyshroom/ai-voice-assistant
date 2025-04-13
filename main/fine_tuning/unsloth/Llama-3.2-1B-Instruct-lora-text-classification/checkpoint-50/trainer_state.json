@@ -1,5 +1,5 @@
 {
-  "best_metric": 0.21440044045448303,
+  "best_metric": 0.22117218375205994,
   "best_model_checkpoint": "unsloth/Llama-3.2-1B-Instruct-lora-text-classification/checkpoint-50",
   "epoch": 2.0,
   "eval_steps": 500,
@@ -10,20 +10,20 @@
   "log_history": [
     {
       "epoch": 1.0,
-      "eval_accuracy": 0.95,
-      "eval_loss": 0.25076454877853394,
-      "eval_runtime": 13.9003,
-      "eval_samples_per_second": 3.597,
-      "eval_steps_per_second": 1.799,
+      "eval_accuracy": 0.9392857142857143,
+      "eval_loss": 0.2881416082382202,
+      "eval_runtime": 17.6432,
+      "eval_samples_per_second": 2.834,
+      "eval_steps_per_second": 1.417,
       "step": 25
     },
     {
       "epoch": 2.0,
-      "eval_accuracy": 0.9528571428571428,
-      "eval_loss": 0.21440044045448303,
-      "eval_runtime": 13.8129,
-      "eval_samples_per_second": 3.62,
-      "eval_steps_per_second": 1.81,
+      "eval_accuracy": 0.9542857142857143,
+      "eval_loss": 0.22117218375205994,
+      "eval_runtime": 19.7971,
+      "eval_samples_per_second": 2.526,
+      "eval_steps_per_second": 1.263,
       "step": 50
     }
   ],
