@@ -5,6 +5,7 @@ __pycache__/
 
 # ds store files
 .DS_Store
+._*
 # Thumbs.db
 Thumbs.db
 # Environments
