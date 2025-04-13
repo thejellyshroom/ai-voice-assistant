@@ -3,6 +3,19 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# ds store files
+.DS_Store
+# Thumbs.db
+Thumbs.db
+# Environments
+.env
+.venv
+
+# fine tuning debug files and models
+debug_output/
+google-bert/
+unsloth/
+
 # C extensions
 *.so
 
