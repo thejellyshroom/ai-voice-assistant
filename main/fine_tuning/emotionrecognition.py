@@ -1,6 +1,5 @@
 import tensorflow as tf
 import numpy as np
-import tensorflow as tf
 from collections import Counter
 from transformers import TFAutoModel, AutoTokenizer
 from datasets import load_dataset
@@ -10,7 +9,7 @@ from utils import emotions_id2label, emotions_label2id, manage_dataset_columns
 NUM_CLASSES = 28
 BATCH_SIZE = 32
 PROBABILITY_THRESHOLD = 0.5
-EPOCHS = 10
+EPOCHS = 5
 
 TEST_TRAIN_RANGE = 2000
 TEST_TEST_RANGE = 500
@@ -20,8 +19,8 @@ tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
 emotion_dataset = load_dataset("google-research-datasets/go_emotions", "simplified")
 
-use_train_dataset = emotion_dataset['train'].select(range(TEST_TRAIN_RANGE))
-use_test_dataset = emotion_dataset['test'].select(range(TEST_TEST_RANGE))
+use_train_dataset = emotion_dataset['train']
+use_test_dataset = emotion_dataset['test']
 use_emotion_dataset = {
     'train': use_train_dataset,
     'test': use_test_dataset
@@ -50,7 +49,7 @@ emotions_encoded = manage_dataset_columns(
     datasets=emotions_encoded,
     columns_to_remove=['label_int', 'labels'],
     column_renames={'multi_hot_labels': 'labels'},
-    verbose=True
+    verbose=False
 )
 
 train_labels_np = np.array(emotions_encoded['train']['labels'])
