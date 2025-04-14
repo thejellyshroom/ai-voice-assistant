@@ -1,14 +1,12 @@
 import tensorflow as tf
 import numpy as np
 from collections import Counter
-import random
-import nltk
-from nltk.corpus import wordnet
-from nltk.tokenize import word_tokenize # Added for augmentation
 from transformers import TFAutoModel, AutoTokenizer
 from datasets import load_dataset
-from fine_tuning.roberta_classification import RoBERTaForClassification
-from utils import emotions_id2label, emotions_label2id, manage_dataset_columns, augment_data
+from roberta_classification import RoBERTaForClassification
+from utils import emotions_id2label, emotions_label2id, manage_dataset_columns, iterative_augment_minority_classes, pipe as augmentation_pipe
+from functools import partial
+
 
 NUM_CLASSES = 28
 BATCH_SIZE = 32
@@ -18,15 +16,17 @@ MINORITY_THRESHOLD_PERCENT = 1.0
 
 TEST_TRAIN_RANGE = 2000
 TEST_TEST_RANGE = 500
+TEST_VALIDATE_RANGE = 100
 
 model = TFAutoModel.from_pretrained("distilroberta-base")
 tokenizer = AutoTokenizer.from_pretrained("distilroberta-base")
 
 emotion_dataset = load_dataset("google-research-datasets/go_emotions", "simplified")
 
-use_train_dataset = emotion_dataset['train']
-use_test_dataset = emotion_dataset['test']
-use_validation_dataset = emotion_dataset['validation']
+# Select a subset of data using .select() for specific ranges
+use_train_dataset = emotion_dataset['train'].select(range(TEST_TRAIN_RANGE))
+use_test_dataset = emotion_dataset['test'].select(range(TEST_TEST_RANGE))
+use_validation_dataset = emotion_dataset['validation'].select(range(TEST_VALIDATE_RANGE))
 
 print("Analyzing original training data for minority classes...")
 original_train_labels = use_train_dataset['labels']
@@ -48,23 +48,33 @@ if minority_classes:
 else:
     print(f"No minority classes found with frequency < {MINORITY_THRESHOLD_PERCENT}%.")
 
-print("Applying data augmentation to training set (this may take a while)...")
-# Use functools.partial to pass fixed arguments to augment_data
-from functools import partial
-augment_fn = partial(augment_data,
-                     minority_classes_set=minority_classes,)
+# --- Perform Iterative Augmentation on Training Data ---
+print("Starting iterative data augmentation...")
+augmented_train_dataset = iterative_augment_minority_classes(
+    train_dataset=use_train_dataset,
+    minority_threshold_percent=MINORITY_THRESHOLD_PERCENT,
+    emotions_id2label_map=emotions_id2label,
+    augmentation_pipe=augmentation_pipe
+    # Optional: add max_iterations or target_augmentation_factor if needed
+)
+print(f"Finished iterative augmentation. Final training set size: {len(augmented_train_dataset)}")
 
-augmented_train_dataset = use_train_dataset.map(augment_fn, num_proc=1) # Start with 1 process
-print("Augmentation complete.")
+# --- Calculate final distribution after augmentation (optional but informative) ---
+print("\nAnalyzing final training data distribution after augmentation...")
+final_train_labels = augmented_train_dataset['labels']
+all_final_labels = [label for sublist in final_train_labels for label in sublist]
+label_counts_final = Counter(all_final_labels)
+total_samples_final = len(augmented_train_dataset)
 
-# print augmented data
-print("Sample of augmented training data:")
-for i in range(50):
-    print(f"Original: {use_train_dataset[i]['text']}")
-    print(f"Augmented: {augmented_train_dataset[i]['text']}")
-    print(f"Labels: {augmented_train_dataset[i]['labels']}")
-    print()
-# --- End Augmentation Application ---
+print(f"Final Total Samples: {total_samples_final}")
+minority_threshold_count_final = total_samples_final * (MINORITY_THRESHOLD_PERCENT / 100.0)
+print(f"Minority Threshold Count (final): {minority_threshold_count_final:.0f}")
+print("Final Class Counts:")
+for label_id in range(NUM_CLASSES):
+    count = label_counts_final.get(label_id, 0)
+    label_name = emotions_id2label.get(label_id, f"Unknown({label_id})")
+    below_threshold_flag = "*" if count < minority_threshold_count_final else ""
+    print(f"  - {label_name} (ID: {label_id}): {count} samples {below_threshold_flag}")
 
 
 # --- Prepare datasets dictionary with augmented training data ---
@@ -120,7 +130,8 @@ for i in range(total_samples):
     else:
         sample_weights_np[i] = 1.0
 
-feature_cols = ["input_ids", "token_type_ids", "attention_mask"]
+# Define feature columns required by the model (excluding token_type_ids for RoBERTa)
+feature_cols = ["input_ids", "attention_mask"]
 label_col = "labels"
 cols_to_set_format = feature_cols + [label_col]
 

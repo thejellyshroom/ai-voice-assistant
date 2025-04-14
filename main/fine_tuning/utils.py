@@ -1,8 +1,14 @@
 import random
 import nltk
+import torch
+import re
 from nltk.corpus import wordnet
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag
+from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+from collections import Counter
+import datasets
+import time
 
 emotions_id2label = {
     0: 'admiration',
@@ -36,19 +42,6 @@ emotions_id2label = {
 }
 emotions_label2id = {v: k for k, v in emotions_id2label.items()}
 
-common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'if', 'of', 'at', 'by', 'for', 'with', 'about',
-                   'against', 'between', 'into', 'through', 'during', 'before', 'after', 'above',
-                   'below', 'to', 'from', 'up', 'down', 'in', 'out', 'on', 'off', 'over', 'under',
-                   'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where', 'why',
-                   'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some',
-                   'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very',
-                   'can', 'will', 'just', 'should', 'now', 'i', 'me', 'my', 'myself', 'we', 'our',
-                   'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him',
-                   'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they',
-                   'them', 'their', 'theirs', 'themselves', 'what', 'which', 'who', 'whom', 'this',
-                   'that', 'these', 'those', 'am', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-                   'have', 'has', 'had', 'having', 'do', 'does', 'did', 'doing'}
-
 def manage_dataset_columns(datasets, 
                           columns_to_remove=None, 
                           column_renames=None, 
@@ -77,105 +70,193 @@ def manage_dataset_columns(datasets,
     
     return modified_datasets
 
+augmentation_model = "huihui-ai/Llama-3.2-1B-Instruct-abliterated"
+augmentation_tokenizer = AutoTokenizer.from_pretrained(augmentation_model)
+augmentation_generator = AutoModelForCausalLM.from_pretrained(
+    augmentation_model,
+    torch_dtype=torch.bfloat16,
+    device_map="auto",
+)
 
+pipe = pipeline(
+    "text-generation",
+    model=augmentation_generator,
+    tokenizer=augmentation_tokenizer,
+    max_length=512,
+    truncation=True,
+)
+if pipe.tokenizer.pad_token_id is None:
+    pipe.tokenizer.pad_token_id = pipe.tokenizer.eos_token_id
 
-# --- Augmentation Functions ---
-# Define a mapping from NLTK POS tags to WordNet POS tags
-def get_wordnet_pos(nltk_tag):
-    """Convert NLTK POS tag to WordNet POS tag for better synonym matching."""
-    if nltk_tag.startswith('J'):  # Adjective
-        return wordnet.ADJ
-    elif nltk_tag.startswith('V'):  # Verb
-        return wordnet.VERB
-    elif nltk_tag.startswith('N'):  # Noun
-        return wordnet.NOUN
-    elif nltk_tag.startswith('R'):  # Adverb
-        return wordnet.ADV
-    else:
-        return None  # No matching WordNet POS tag
+def generate_augmented_text(original_text, target_label_id, augmentation_pipe):
+    emotional_label_str = emotions_id2label[target_label_id]
+    prompt = f"Rephrase the following text to strongly express the emotion '{emotional_label_str}'. Output ONLY the rephrased sentence(s), nothing else. Do not explain or add notes. Original text: '{original_text}'. Rephrased text:"
+    augmented_text = ""
 
-def get_synonyms(word, pos=None):
-    """Fetches synonyms for a word using WordNet, filtered by part of speech."""
-    synonyms = set()
-    
-    if word.lower() in common_words or len(word) <= 2 or not word.isalpha():
-        return list(synonyms)  # Return empty list for these words
-    
-    if pos:
-        # Use specific POS
-        synsets = wordnet.synsets(word, pos=pos)
-    else:
-        synsets = wordnet.synsets(word)
-        
-    for syn in synsets:
-        for lemma in syn.lemmas():
-            # Filter only single-word synonyms that are different from original
-            synonym = lemma.name().replace('_', ' ').lower()
-            if ' ' not in synonym and synonym != word.lower() and synonym.isalpha():
-                synonyms.add(synonym)
-                
-    return list(synonyms)
+    # List of forbidden substrings often found in bad augmentations
+    forbidden_phrases = [
+        "rephrased text:", "original text:", "note:", "explanation:",
+        "step ", "option ", "disclaimer:", "cannot assist", "unable to",
+        "i cannot", "i'm unable", "my purpose is", "as an ai",
+        "this is a test", "rephrasing:", "augmented:", "sentiment:",
+        "emotion label:", "context:",
+        # more?
+    ]
 
-def augment_text_synonym_replacement(text, augmentation_rate=0.6):
-    """Replaces words with synonyms at a given rate."""
-    words = word_tokenize(text)
-    tagged_words = pos_tag(words)
-    new_words = words.copy()
-    
-    # Target only longer content words (nouns, verbs, adjectives, adverbs)
-    content_word_indices = [i for i, (word, tag) in enumerate(tagged_words) 
-                            if len(word) > 3 and get_wordnet_pos(tag) is not None]
-    
-    if not content_word_indices:
-        return text
-        
-    num_words_to_replace = max(1, min(int(len(content_word_indices) * augmentation_rate), 5))
-    # Don't replace more than 3 words to avoid excessive changes
-    
-    # Shuffle the indices to pick random content words
-    random.shuffle(content_word_indices)
-    replaced_count = 0
+    max_words = 50 
+    min_words = 3  
 
-    for i in content_word_indices:
-        if replaced_count >= num_words_to_replace:
+    while not augmented_text:
+        outputs = augmentation_pipe(
+            prompt,
+            max_new_tokens=100,
+            do_sample=True,
+            temperature=1.0,
+            pad_token_id=augmentation_pipe.tokenizer.pad_token_id,
+            num_return_sequences=1, 
+        )
+        if outputs and outputs[0]['generated_text']:
+            generated_full_text = outputs[0]['generated_text']
+            # Find the prompt end and take the text after it
+            prompt_end_index = generated_full_text.find(prompt)
+            if prompt_end_index != -1:
+                potential_augmented_text = generated_full_text[prompt_end_index + len(prompt):].strip()
+
+            # --- Start Enhanced Filtering ---
+            if potential_augmented_text:
+                clean_text = re.sub(r"^[^\w\(\)]+", "", potential_augmented_text).strip()
+                if not clean_text.endswith(('.', '!', '?')):
+                    last_punc = max(clean_text.rfind('.'), clean_text.rfind('!'), clean_text.rfind('?'))
+                    if last_punc != -1:
+                        clean_text = clean_text[:last_punc+1]
+                    else:
+                        last_space = clean_text.rfind(' ')
+                        if last_space != -1:
+                            clean_text = clean_text[:last_space].strip()
+
+                # Check for forbidden phrases (case-insensitive)
+                lower_clean_text = clean_text.lower()
+                if any(phrase in lower_clean_text for phrase in forbidden_phrases):
+                    print(f"Filtered (forbidden phrase): '{clean_text}'")
+                    potential_augmented_text = "" # Discard
+                else:
+                    # Check word count
+                    word_count = len(clean_text.split())
+                    if not (min_words <= word_count <= max_words):
+                        print(f"Filtered (word count {word_count}): '{clean_text}'")
+                        potential_augmented_text = "" # Discard
+                    else:
+                         # Final check against original text
+                         if clean_text.lower() == original_text.lower():
+                              print(f"Filtered (same as original): '{clean_text}'")
+                              potential_augmented_text = "" #Discard
+                         else:
+                             potential_augmented_text = clean_text # Keep the cleaned text
+            if (potential_augmented_text):
+                augmented_text = potential_augmented_text
+                break
+            else:
+                 print(f"Discarded generated text for '{original_text}' after filtering.")
+    
+    print(f"Original: {original_text}")
+    print(f"Augmented: {augmented_text}")
+    return augmented_text
+
+def iterative_augment_minority_classes(
+    train_dataset,
+    minority_threshold_percent,
+    emotions_id2label_map,
+    augmentation_pipe,
+    max_iterations=50,
+    target_augmentation_factor=2.0 # Aim to increase minority samples by this factor per iteration
+    ):
+
+    print("\n--- Starting Iterative Data Augmentation ---")
+    current_train_dataset = train_dataset
+    num_classes = len(emotions_id2label_map)
+
+    for iteration in range(max_iterations):
+        print(f"\nAugmentation Iteration {iteration + 1}/{max_iterations}")
+
+        all_labels = [label for sublist in current_train_dataset['labels'] for label in sublist]
+        label_counts = Counter(all_labels)
+        total_samples = len(current_train_dataset)
+        minority_threshold_count = total_samples * (minority_threshold_percent / 100.0)
+
+        minority_classes = {
+            label: count for label, count in label_counts.items()
+            if count < minority_threshold_count
+        }
+
+        if not minority_classes:
+            print("No minority classes found below the threshold. Augmentation complete.")
             break
-            
-        word = words[i]
-        pos = get_wordnet_pos(tagged_words[i][1])  # Get WordNet POS from NLTK tag
-        synonyms = get_synonyms(word, pos)
-        
-        if synonyms:
-            synonym = random.choice(synonyms)
-            # Preserve capitalization
-            if word[0].isupper():
-                synonym = synonym.capitalize()
-            new_words[i] = synonym
-            replaced_count += 1
 
-    # Handle cases where tokenization might add spaces around punctuation
-    result = ' '.join(new_words)
-    for fix in [(" 's", "'s"), (" n't", "n't"), (" .", "."), (" ,", ","), 
-               (" ?", "?"), (" !", "!"), (" ;", ";"), (" :", ":")]:
-        result = result.replace(*fix)
-    
-    return result
+        print(f"Identified {len(minority_classes)} minority classes (threshold count < {minority_threshold_count:.0f}):")
+        for label_id, count in minority_classes.items():
+             label_name = emotions_id2label_map.get(label_id, f"Unknown({label_id})")
+             print(f"  - {label_name} (ID: {label_id}): {count} samples")
+
+        newly_augmented_data = {feature: [] for feature in current_train_dataset.features}
+        processed_texts_in_iter = set() # Avoid re-augmenting same text for different minority labels in one go
+
+        sorted_minority_classes = sorted(minority_classes.items(), key=lambda item: item[1])
+
+        for label_id, current_count in sorted_minority_classes:
+             samples_needed = int((minority_threshold_count - current_count) * target_augmentation_factor)
+             samples_to_generate = max(1, samples_needed) # Ensure we generate at least one if needed
+             print(f"  Targeting label {emotions_id2label_map.get(label_id)} (ID: {label_id}). Need ~{samples_needed} more. Generating up to {samples_to_generate}.")
+
+             # Find original samples containing this minority label
+             candidate_indices = [
+                 i for i, sample_labels in enumerate(current_train_dataset['labels'])
+                 if label_id in sample_labels and current_train_dataset['text'][i] not in processed_texts_in_iter
+             ]
+
+             generated_count = 0
+             random.shuffle(candidate_indices)
+
+             for idx in candidate_indices:
+                 if generated_count >= samples_to_generate:
+                     break
+
+                 original_sample = current_train_dataset[idx]
+                 original_text = original_sample['text']
+
+                 # Generate augmented text specifically for this minority label
+                 augmented_text = generate_augmented_text(
+                     original_text,
+                     label_id,
+                     augmentation_pipe
+                 )
+
+                 if augmented_text:
+                     newly_augmented_data['text'].append(augmented_text)
+                     newly_augmented_data['labels'].append(original_sample['labels'])
+                     new_id = f"{original_sample['id']}_aug_{iteration+1}_{generated_count}"
+                     newly_augmented_data['id'].append(new_id)
+
+                     processed_texts_in_iter.add(original_text) # Mark base text as processed for this iteration
+                     processed_texts_in_iter.add(augmented_text) # Avoid augmenting the newly created text immediately
+                     generated_count += 1
+
+             print(f"    Generated {generated_count} new samples for label {label_id}.")
 
 
-def augment_data(example, minority_classes_set=None):
-    """Applies augmentation, targeting minority classes with higher probability."""
-    should_augment = False
+        # 4. Create and Concatenate Augmented Dataset
+        if newly_augmented_data['text']:
+            final_augmented_data = {k: v for k, v in newly_augmented_data.items() if v}
 
-    if minority_classes_set:
-        example_labels = set(example.get('labels', []))
-        # Check for intersection between example labels and minority classes
-        if not example_labels.isdisjoint(minority_classes_set):
-            should_augment = True
+            augmented_dataset_chunk = datasets.Dataset.from_dict(
+                final_augmented_data, # Use the dict with all required keys
+                features=current_train_dataset.features
+            )
+            print(f"Created augmented chunk with {len(augmented_dataset_chunk)} samples.")
 
-    if should_augment:
-        original_text = example['text']
-        augmented_text = augment_text_synonym_replacement(original_text)
-        # Only update if augmentation actually changed the text
-        if augmented_text != original_text:
-            example['text'] = augmented_text
+            current_train_dataset = datasets.concatenate_datasets([current_train_dataset, augmented_dataset_chunk])
+            print(f"New training dataset size: {len(current_train_dataset)}")
+    else: # This else block executes if the loop completes without break (i.e., max_iterations reached)
+        print(f"Reached maximum augmentation iterations ({max_iterations}). Stopping.")
 
-    return example
+    print("--- Finished Iterative Data Augmentation ---")
+    return current_train_dataset
