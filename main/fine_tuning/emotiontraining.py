@@ -249,7 +249,65 @@ print("\nTest Set Evaluation Results:")
 for name, value in zip(classifier.metrics_names, results):
     print(f"- {name}: {value:.4f}")
 
-print("Predictions with TRAINED multi-label model:")
+# --- Save the Trained Model ---
+model_save_path = "./custom_models/emotion_classifier"
+print(f"\nSaving trained model to: {model_save_path}")
+classifier.save(model_save_path)
+print("Model saved successfully.")
+# ----------------------------
+
+# --- Example: Load Saved Model and Predict ---
+print("\n--- Loading and Testing Saved Model --- ")
+try:
+    # Ensure the custom object is registered or use safe_mode=False (less recommended)
+    # For RoBERTaForClassification, if it relies only on standard layers and the base BERT model,
+    # loading might work directly. If it uses complex custom logic, you might need
+    # @tf.keras.utils.register_keras_serializable() decorator on the class.
+    loaded_classifier = tf.keras.models.load_model(model_save_path)
+    print(f"Model loaded successfully from {model_save_path}")
+
+    # Need the tokenizer again for new predictions
+    tokenizer_for_inference = AutoTokenizer.from_pretrained("distilroberta-base")
+
+    # Define a predict function that uses the loaded model and new tokenizer
+    # (This is similar to the original predict_emotion but uses loaded components)
+    def predict_with_loaded_model(text, loaded_model, tokenizer, threshold=PROBABILITY_THRESHOLD):
+        inputs = tokenizer(text, return_tensors='tf', padding=True, truncation=True)
+        predictions = loaded_model(inputs)
+        predicted_labels_indices = tf.where(predictions[0] > threshold).numpy().flatten()
+        predicted_emotions = []
+        confidences = []
+        if len(predicted_labels_indices) > 0:
+            for index in predicted_labels_indices:
+                predicted_emotions.append(emotions_id2label.get(index, f"Unknown({index})"))
+                confidences.append(float(predictions[0][index]))
+        else:
+            # Fallback: predict the single most likely label if none exceed threshold
+            highest_prob_index = tf.argmax(predictions, axis=1).numpy()[0]
+            predicted_emotions.append(emotions_id2label.get(highest_prob_index, f"Unknown({highest_prob_index})"))
+            confidences.append(float(predictions[0][highest_prob_index]))
+        return {
+            'text': text,
+            'emotions': predicted_emotions,
+            'confidences': confidences
+        }
+
+    # Test prediction with the loaded model
+    test_text = "This is fantastic news, I feel so relieved!"
+    result = predict_with_loaded_model(test_text, loaded_classifier, tokenizer_for_inference)
+    print(f"\nPrediction using loaded model for: '{result['text']}'")
+    print(f"Predicted emotions: {result['emotions']}")
+    emotion_confidence_pairs = list(zip(result['emotions'], result['confidences']))
+    print(f"Confidences: {emotion_confidence_pairs}")
+
+except Exception as e:
+    print(f"Error loading or predicting with saved model: {e}")
+    print("Loading Keras models with custom objects might require registering the custom class.")
+    print("See: https://www.tensorflow.org/guide/keras/save_and_serialize#custom_objects")
+# -------------------------------------------
+
+
+print("\nPredictions with TRAINED multi-label model (using original classifier object):")
 print("----------------------------------------")
 
 # Call the refactored run_examples function from utils
@@ -259,4 +317,3 @@ run_examples(
     threshold=PROBABILITY_THRESHOLD,
     test_texts=TEST_TEXTS # Use TEST_TEXTS imported from utils
 )
-
