@@ -4,29 +4,32 @@ from collections import Counter
 from transformers import TFAutoModel, AutoTokenizer
 from datasets import load_dataset
 from roberta_classification import RoBERTaForClassification
-from utils import emotions_id2label, emotions_label2id, manage_dataset_columns, iterative_augment_minority_classes, pipe as augmentation_pipe
+from utils_emotiontraining import (emotions_id2label, emotions_label2id, manage_dataset_columns, 
+                                   iterative_augment_minority_classes, pipe as augmentation_pipe, 
+                                   run_examples, TEST_TEXTS)
 from functools import partial
 
 
 NUM_CLASSES = 28
 BATCH_SIZE = 32
 PROBABILITY_THRESHOLD = 0.5
-EPOCHS = 5
-MINORITY_THRESHOLD_PERCENT = 1.0
+EPOCHS = 20
+MINORITY_THRESHOLD_PERCENT = 1.5
 
 TEST_TRAIN_RANGE = 2000
 TEST_TEST_RANGE = 500
 TEST_VALIDATE_RANGE = 100
+
+
 
 model = TFAutoModel.from_pretrained("distilroberta-base")
 tokenizer = AutoTokenizer.from_pretrained("distilroberta-base")
 
 emotion_dataset = load_dataset("google-research-datasets/go_emotions", "simplified")
 
-# Select a subset of data using .select() for specific ranges
-use_train_dataset = emotion_dataset['train'].select(range(TEST_TRAIN_RANGE))
-use_test_dataset = emotion_dataset['test'].select(range(TEST_TEST_RANGE))
-use_validation_dataset = emotion_dataset['validation'].select(range(TEST_VALIDATE_RANGE))
+use_train_dataset = emotion_dataset['train']#.select(range(TEST_TRAIN_RANGE))
+use_test_dataset = emotion_dataset['test']#.select(range(TEST_TEST_RANGE))
+use_validation_dataset = emotion_dataset['validation']#.select(range(TEST_VALIDATE_RANGE))
 
 print("Analyzing original training data for minority classes...")
 original_train_labels = use_train_dataset['labels']
@@ -45,8 +48,6 @@ if minority_classes:
     minority_class_names = {emotions_id2label.get(idx, f"Unknown({idx})") for idx in minority_classes}
     print(f"Minority Classes Indices: {minority_classes}")
     print(f"Minority Classes Names: {minority_class_names}")
-else:
-    print(f"No minority classes found with frequency < {MINORITY_THRESHOLD_PERCENT}%.")
 
 # --- Perform Iterative Augmentation on Training Data ---
 print("Starting iterative data augmentation...")
@@ -76,8 +77,6 @@ for label_id in range(NUM_CLASSES):
     below_threshold_flag = "*" if count < minority_threshold_count_final else ""
     print(f"  - {label_name} (ID: {label_id}): {count} samples {below_threshold_flag}")
 
-
-# --- Prepare datasets dictionary with augmented training data ---
 use_emotion_dataset = {
     'train': augmented_train_dataset, # Use augmented data for training
     'test': use_test_dataset,
@@ -171,7 +170,6 @@ print("Datasets created successfully.")
 
 
 def predict_emotion(text, model, threshold=PROBABILITY_THRESHOLD):
-    """Predict multiple emotions for a given text using the provided model and threshold"""
     inputs = tokenizer(text, return_tensors='tf', padding=True, truncation=True)
     predictions = model(inputs=inputs)
 
@@ -194,34 +192,23 @@ def predict_emotion(text, model, threshold=PROBABILITY_THRESHOLD):
         'confidences': confidences
     }
 
-test_texts = [
-    "I'm so happy today!",
-    "This makes me really angry.",
-    "I'm feeling very sad and disappointed.",
-    "That's really interesting, tell me more.",
-    "I am both excited and nervous about the presentation.", # data with multiple emotions
-]
-
 untrained_classifier = RoBERTaForClassification(model, num_classes=NUM_CLASSES)
 
 untrained_classifier.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
-    # Use BinaryCrossentropy for multi-label with sigmoid activation
     loss=tf.keras.losses.BinaryCrossentropy(),
-    # Use BinaryAccuracy for multi-label evaluation
     metrics=[tf.keras.metrics.BinaryAccuracy(name='accuracy')]
 )
 
 print("Predictions with UNTRAINED model (random weights - multi-label):")
 print("-------------------------------------------------------------")
 
-for text in test_texts:
-    result = predict_emotion(text, untrained_classifier, threshold=PROBABILITY_THRESHOLD)
-    print(f"Text: {result['text']}")
-    print(f"Predicted emotions: {result['emotions']}")
-    emotion_confidence_pairs = list(zip(result['emotions'], result['confidences']))
-    print(f"Confidences: {emotion_confidence_pairs}")
-    print()
+run_examples(
+    classifier=untrained_classifier, 
+    predict_emotion_func=predict_emotion, 
+    threshold=PROBABILITY_THRESHOLD,
+    test_texts=TEST_TEXTS # Use TEST_TEXTS imported from utils
+)
 
 classifier = RoBERTaForClassification(model, num_classes=NUM_CLASSES)
 
@@ -232,19 +219,25 @@ classifier.compile(
     metrics=[
         tf.keras.metrics.BinaryAccuracy(name='accuracy'),
         tf.keras.metrics.AUC(multi_label=True, name='auc'), # Good overall multi-label metric
-        tf.keras.metrics.Precision(name='precision'), # How many selected items are relevant?
-        tf.keras.metrics.Recall(name='recall') # How many relevant items are selected?
+        tf.keras.metrics.Precision(name='precision'),
+        tf.keras.metrics.Recall(name='recall')
         ]
 )
 print("Model compiled.")
 
-# Train the model
 print("Starting multi-label model training with sample weights...")
+early_stopping = tf.keras.callbacks.EarlyStopping(
+    monitor='val_loss',  # Monitor validation loss
+    patience=5,           # Stop after 5 epochs of no improvement
+    restore_best_weights=True, # Restore weights from the best epoch
+    verbose=1             # Print messages when stopping
+)
 
 history = classifier.fit(
     train_dataset,
-    epochs=EPOCHS, 
-    validation_data=validation_dataset
+    epochs=EPOCHS,
+    validation_data=validation_dataset,
+    callbacks=[early_stopping]
 )
 print("Training finished.")
 
@@ -259,11 +252,11 @@ for name, value in zip(classifier.metrics_names, results):
 print("Predictions with TRAINED multi-label model:")
 print("----------------------------------------")
 
-for text in test_texts:
-    result = predict_emotion(text, classifier, threshold=PROBABILITY_THRESHOLD)
-    print(f"Text: {result['text']}")
-    print(f"Predicted emotions: {result['emotions']}")
-    # Zip confidences with emotions for clarity
-    emotion_confidence_pairs = list(zip(result['emotions'], result['confidences']))
-    print(f"Confidences: {emotion_confidence_pairs}")
-    print()
+# Call the refactored run_examples function from utils
+run_examples(
+    classifier=classifier, 
+    predict_emotion_func=predict_emotion, 
+    threshold=PROBABILITY_THRESHOLD,
+    test_texts=TEST_TEXTS # Use TEST_TEXTS imported from utils
+)
+

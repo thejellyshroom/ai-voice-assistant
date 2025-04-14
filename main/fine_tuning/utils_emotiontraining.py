@@ -42,6 +42,50 @@ emotions_id2label = {
 }
 emotions_label2id = {v: k for k, v in emotions_id2label.items()}
 
+TEST_TEXTS = [
+    "I'm so happy today!",
+    "This makes me really angry.",
+    "I'm feeling very sad and disappointed.",
+    "That's really interesting, tell me more.",
+    "I am both excited and nervous about the presentation.", # data with multiple emotions
+    # --- More Complicated Examples ---
+    "My hands were shaking as I opened the letter, unsure what to expect.",
+        # Potential Emotions: nervousness, anticipation, fear, excitement?
+    "After the argument, the silence in the car was deafening and heavy.",
+        # Potential Emotions: anger, sadness, tension, awkwardness (remorse?)
+    "Watching the sunset reminded me of our last trip together - a bittersweet memory.",
+        # Potential Emotions: nostalgia, sadness, joy, love
+    "I'm relieved the project is finally over, but also a bit anxious about what comes next.",
+        # Potential Emotions: relief, anxiety, maybe fatigue or even sadness if the project was enjoyable
+    # Sarcasm / Figurative Language
+    "Oh great, another 'urgent' all-hands meeting scheduled for 5 PM on a Friday. Just perfect.",
+        # Potential Emotions: annoyance, frustration, sarcasm (model might incorrectly see 'gratitude' or 'excitement')
+    "Getting a flat tire miles from anywhere on the way to the most important interview of my life was exactly the kind of luck I needed.",
+        # Potential Emotions: frustration, anger, disappointment, anxiety, sarcasm
+    # Ambiguity / Context Dependency
+    "He delivered the bad news with a completely straight face, leaving us all reeling.",
+        # Potential Emotions (in the speaker/listener): confusion, fear, shock, maybe anger at his lack of reaction (neutral emotion from him)
+    "Well, that certainly was an experience I won't forget anytime soon.",
+        # Potential Emotions: Can range widely depending on the implied experience - could be amusement, annoyance, disgust, awe, fear, relief etc. Very ambiguous.
+    # Complex Sentence Structure / Nuance
+    "I wouldn't say I'm *thrilled* about the sudden change in plans, but I suppose I can adapt if necessary.",
+        # Potential Emotions: annoyance (masked), resignation, acceptance, disapproval
+    "Despite the initial burst of optimism, realizing the sheer amount of unexpected work ahead filled me with a quiet sense of dread.",
+        # Potential Emotions: optimism (past/fading), dread, anxiety, disappointment, feeling overwhelmed
+]
+
+# Updated function to accept necessary components as arguments
+def run_examples(classifier, predict_emotion_func, threshold, test_texts):
+    for text in test_texts:
+        # Use the passed-in prediction function and threshold
+        result = predict_emotion_func(text, classifier, threshold=threshold)
+        print(f"Text: {result['text']}")
+        print(f"Predicted emotions: {result['emotions']}")
+        # Zip confidences with emotions for clarity
+        emotion_confidence_pairs = list(zip(result['emotions'], result['confidences']))
+        print(f"Confidences: {emotion_confidence_pairs}")
+        print()
+
 def manage_dataset_columns(datasets, 
                           columns_to_remove=None, 
                           column_renames=None, 
@@ -93,7 +137,6 @@ def generate_augmented_text(original_text, target_label_id, augmentation_pipe):
     prompt = f"Rephrase the following text to strongly express the emotion '{emotional_label_str}'. Output ONLY the rephrased sentence(s), nothing else. Do not explain or add notes. Original text: '{original_text}'. Rephrased text:"
     augmented_text = ""
 
-    # List of forbidden substrings often found in bad augmentations
     forbidden_phrases = [
         "rephrased text:", "original text:", "note:", "explanation:",
         "step ", "option ", "disclaimer:", "cannot assist", "unable to",
@@ -103,7 +146,7 @@ def generate_augmented_text(original_text, target_label_id, augmentation_pipe):
         # more?
     ]
 
-    max_words = 50 
+    max_words = 100 
     min_words = 3  
 
     while not augmented_text:
@@ -133,33 +176,29 @@ def generate_augmented_text(original_text, target_label_id, augmentation_pipe):
                         last_space = clean_text.rfind(' ')
                         if last_space != -1:
                             clean_text = clean_text[:last_space].strip()
-
-                # Check for forbidden phrases (case-insensitive)
+                #Forbidden words check
                 lower_clean_text = clean_text.lower()
                 if any(phrase in lower_clean_text for phrase in forbidden_phrases):
-                    print(f"Filtered (forbidden phrase): '{clean_text}'")
                     potential_augmented_text = "" # Discard
                 else:
                     # Check word count
                     word_count = len(clean_text.split())
                     if not (min_words <= word_count <= max_words):
-                        print(f"Filtered (word count {word_count}): '{clean_text}'")
                         potential_augmented_text = "" # Discard
                     else:
                          # Final check against original text
                          if clean_text.lower() == original_text.lower():
-                              print(f"Filtered (same as original): '{clean_text}'")
                               potential_augmented_text = "" #Discard
                          else:
-                             potential_augmented_text = clean_text # Keep the cleaned text
+                             potential_augmented_text = clean_text
             if (potential_augmented_text):
                 augmented_text = potential_augmented_text
                 break
             else:
                  print(f"Discarded generated text for '{original_text}' after filtering.")
     
-    print(f"Original: {original_text}")
-    print(f"Augmented: {augmented_text}")
+    # print(f"Original: {original_text}")
+    # print(f"Augmented: {augmented_text}")
     return augmented_text
 
 def iterative_augment_minority_classes(
@@ -236,14 +275,14 @@ def iterative_augment_minority_classes(
                      new_id = f"{original_sample['id']}_aug_{iteration+1}_{generated_count}"
                      newly_augmented_data['id'].append(new_id)
 
-                     processed_texts_in_iter.add(original_text) # Mark base text as processed for this iteration
+                     processed_texts_in_iter.add(original_text)
                      processed_texts_in_iter.add(augmented_text) # Avoid augmenting the newly created text immediately
                      generated_count += 1
 
              print(f"    Generated {generated_count} new samples for label {label_id}.")
 
 
-        # 4. Create and Concatenate Augmented Dataset
+        # Create and Concatenate Augmented Dataset
         if newly_augmented_data['text']:
             final_augmented_data = {k: v for k, v in newly_augmented_data.items() if v}
 
@@ -251,8 +290,6 @@ def iterative_augment_minority_classes(
                 final_augmented_data, # Use the dict with all required keys
                 features=current_train_dataset.features
             )
-            print(f"Created augmented chunk with {len(augmented_dataset_chunk)} samples.")
-
             current_train_dataset = datasets.concatenate_datasets([current_train_dataset, augmented_dataset_chunk])
             print(f"New training dataset size: {len(current_train_dataset)}")
     else: # This else block executes if the loop completes without break (i.e., max_iterations reached)
