@@ -1,29 +1,77 @@
 import tensorflow as tf
 import numpy as np
 from collections import Counter
+import random
+import nltk
+from nltk.corpus import wordnet
+from nltk.tokenize import word_tokenize # Added for augmentation
 from transformers import TFAutoModel, AutoTokenizer
 from datasets import load_dataset
-from bert_classification import BERTForClassification
-from utils import emotions_id2label, emotions_label2id, manage_dataset_columns
+from fine_tuning.roberta_classification import RoBERTaForClassification
+from utils import emotions_id2label, emotions_label2id, manage_dataset_columns, augment_data
 
 NUM_CLASSES = 28
 BATCH_SIZE = 32
 PROBABILITY_THRESHOLD = 0.5
 EPOCHS = 5
+MINORITY_THRESHOLD_PERCENT = 1.0
 
 TEST_TRAIN_RANGE = 2000
 TEST_TEST_RANGE = 500
 
-model = TFAutoModel.from_pretrained("bert-base-uncased")
-tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+model = TFAutoModel.from_pretrained("distilroberta-base")
+tokenizer = AutoTokenizer.from_pretrained("distilroberta-base")
 
 emotion_dataset = load_dataset("google-research-datasets/go_emotions", "simplified")
 
 use_train_dataset = emotion_dataset['train']
 use_test_dataset = emotion_dataset['test']
+use_validation_dataset = emotion_dataset['validation']
+
+print("Analyzing original training data for minority classes...")
+original_train_labels = use_train_dataset['labels']
+all_labels = [label for sublist in original_train_labels for label in sublist]
+label_counts_original = Counter(all_labels)
+total_samples_original = len(use_train_dataset)
+
+# --- Identify minority classes (e.g., frequency < 1% of total samples) ---
+minority_threshold_count = total_samples_original * (MINORITY_THRESHOLD_PERCENT / 100.0)
+minority_classes = {
+    label for label, count in label_counts_original.items()
+    if count < minority_threshold_count
+}
+if minority_classes:
+    print(f"Identified {len(minority_classes)} minority classes (frequency < {MINORITY_THRESHOLD_PERCENT}%, count < {minority_threshold_count:.0f}):")
+    minority_class_names = {emotions_id2label.get(idx, f"Unknown({idx})") for idx in minority_classes}
+    print(f"Minority Classes Indices: {minority_classes}")
+    print(f"Minority Classes Names: {minority_class_names}")
+else:
+    print(f"No minority classes found with frequency < {MINORITY_THRESHOLD_PERCENT}%.")
+
+print("Applying data augmentation to training set (this may take a while)...")
+# Use functools.partial to pass fixed arguments to augment_data
+from functools import partial
+augment_fn = partial(augment_data,
+                     minority_classes_set=minority_classes,)
+
+augmented_train_dataset = use_train_dataset.map(augment_fn, num_proc=1) # Start with 1 process
+print("Augmentation complete.")
+
+# print augmented data
+print("Sample of augmented training data:")
+for i in range(50):
+    print(f"Original: {use_train_dataset[i]['text']}")
+    print(f"Augmented: {augmented_train_dataset[i]['text']}")
+    print(f"Labels: {augmented_train_dataset[i]['labels']}")
+    print()
+# --- End Augmentation Application ---
+
+
+# --- Prepare datasets dictionary with augmented training data ---
 use_emotion_dataset = {
-    'train': use_train_dataset,
-    'test': use_test_dataset
+    'train': augmented_train_dataset, # Use augmented data for training
+    'test': use_test_dataset,
+    'validation': use_validation_dataset
 }
 
 def tokenize(batch):
@@ -32,6 +80,7 @@ def tokenize(batch):
 emotions_encoded = {}
 emotions_encoded['train'] = use_emotion_dataset['train'].map(tokenize, batched=True, batch_size=None)
 emotions_encoded['test'] = use_emotion_dataset['test'].map(tokenize, batched=True, batch_size=None)
+emotions_encoded['validation'] = use_emotion_dataset['validation'].map(tokenize, batched=True, batch_size=None)
 
 def create_multi_hot_labels(data):
     multi_hot_label = np.zeros(NUM_CLASSES, dtype=np.float32)
@@ -44,6 +93,7 @@ def create_multi_hot_labels(data):
 
 emotions_encoded['train'] = emotions_encoded['train'].map(create_multi_hot_labels)
 emotions_encoded['test'] = emotions_encoded['test'].map(create_multi_hot_labels)
+emotions_encoded['validation'] = emotions_encoded['validation'].map(create_multi_hot_labels)
 
 emotions_encoded = manage_dataset_columns(
     datasets=emotions_encoded,
@@ -76,16 +126,10 @@ cols_to_set_format = feature_cols + [label_col]
 
 actual_train_cols = list(emotions_encoded['train'].features)
 actual_test_cols = list(emotions_encoded['test'].features)
+actual_validation_cols = list(emotions_encoded['validation'].features)
 final_train_cols = [col for col in cols_to_set_format if col in actual_train_cols]
 final_test_cols = [col for col in cols_to_set_format if col in actual_test_cols]
-
-if all(col in final_train_cols for col in cols_to_set_format) and \
-   all(col in final_test_cols for col in cols_to_set_format):
-    print("Setting dataset format to TensorFlow")
-    # Don't set format yet, extract numpy arrays first, then create dataset
-else:
-     raise ValueError(f"Error: Could not find all necessary columns. Train has: {actual_train_cols}, Test has: {actual_test_cols}. Needed: {cols_to_set_format}")
-
+final_validation_cols = [col for col in cols_to_set_format if col in actual_validation_cols]
 
 # Extract features and labels as numpy arrays before creating dataset
 train_features_np = {col: np.array(emotions_encoded['train'][col]) for col in feature_cols}
@@ -93,6 +137,9 @@ train_labels_np = np.array(emotions_encoded['train']['labels']) #already have, r
 
 test_features_np = {col: np.array(emotions_encoded['test'][col]) for col in feature_cols}
 test_labels_np = np.array(emotions_encoded['test']['labels'])
+
+validate_features_np = {col: np.array(emotions_encoded['validation'][col]) for col in feature_cols}
+validate_labels_np = np.array(emotions_encoded['validation']['labels'])
 
 train_dataset = tf.data.Dataset.from_tensor_slices(
     (train_features_np, train_labels_np, sample_weights_np)
@@ -104,6 +151,11 @@ test_dataset = tf.data.Dataset.from_tensor_slices(
     (test_features_np, test_labels_np)
 )
 test_dataset = test_dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE) # Add prefetch
+
+validation_dataset = tf.data.Dataset.from_tensor_slices(
+    (validate_features_np, validate_labels_np)
+)
+validation_dataset = validation_dataset.batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE) # Add prefetch
 print("Datasets created successfully.")
 
 
@@ -139,7 +191,7 @@ test_texts = [
     "I am both excited and nervous about the presentation.", # data with multiple emotions
 ]
 
-untrained_classifier = BERTForClassification(model, num_classes=NUM_CLASSES)
+untrained_classifier = RoBERTaForClassification(model, num_classes=NUM_CLASSES)
 
 untrained_classifier.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=2e-5),
@@ -160,7 +212,7 @@ for text in test_texts:
     print(f"Confidences: {emotion_confidence_pairs}")
     print()
 
-classifier = BERTForClassification(model, num_classes=NUM_CLASSES)
+classifier = RoBERTaForClassification(model, num_classes=NUM_CLASSES)
 
 print("Compiling model with AUC, Precision, Recall...")
 classifier.compile(
@@ -181,7 +233,7 @@ print("Starting multi-label model training with sample weights...")
 history = classifier.fit(
     train_dataset,
     epochs=EPOCHS, 
-    validation_data=test_dataset
+    validation_data=validation_dataset
 )
 print("Training finished.")
 

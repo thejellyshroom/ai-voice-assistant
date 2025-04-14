@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-class BERTForClassification(tf.keras.Model):
+class RoBERTaForClassification(tf.keras.Model):
     def __init__(self, bert_model, num_classes):
         super().__init__()
         self.bert = bert_model
