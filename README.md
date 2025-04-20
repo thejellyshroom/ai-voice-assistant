@@ -1,4 +1,8 @@
-# AI Voice Assistant
+# Fine tuning distil roberta for multi label emotion classification.
+
+Voice assistant has been moved to thejellyshroom/aplaca-ai
+
+# (Legacy) AI Voice Assistant
 
 An interactive voice assistant that uses speech recognition, large language models, and text-to-speech to create a natural conversation experience.
 

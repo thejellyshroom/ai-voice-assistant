@@ -1,14 +1,9 @@
 import random
-import nltk
 import torch
 import re
-from nltk.corpus import wordnet
-from nltk.tokenize import word_tokenize
-from nltk import pos_tag
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
 from collections import Counter
 import datasets
-import time
 
 emotions_id2label = {
     0: 'admiration',
@@ -207,7 +202,7 @@ def iterative_augment_minority_classes(
     emotions_id2label_map,
     augmentation_pipe,
     max_iterations=50,
-    target_augmentation_factor=2.0 # Aim to increase minority samples by this factor per iteration
+    target_augmentation_factor=1.5 # Aim to increase minority samples by this factor per iteration
     ):
 
     print("\n--- Starting Iterative Data Augmentation ---")
