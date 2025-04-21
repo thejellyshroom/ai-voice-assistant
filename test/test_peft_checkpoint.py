@@ -6,7 +6,7 @@ import numpy as np
 
 # Import necessary items from the utils script
 try:
-    from utils_emotiontraining import emotions_id2label, TEST_TEXTS
+    from main.fine_tuning.utils_emotiontraining import emotions_id2label, TEST_TEXTS
     NUM_CLASSES = len(emotions_id2label)
 except ImportError:
     print("Error: Could not import from utils_emotiontraining.py.")

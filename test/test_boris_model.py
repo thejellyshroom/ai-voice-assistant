@@ -3,7 +3,7 @@ import torch # Or tensorflow if you prefer that backend
 
 # Import test texts from the utils script
 try:
-    from utils_emotiontraining import TEST_TEXTS, emotions_id2label # Assuming this model uses the same first 28 labels
+    from main.fine_tuning.utils_emotiontraining import TEST_TEXTS, emotions_id2label # Assuming this model uses the same first 28 labels
 except ImportError:
     print("Error: Could not import from utils_emotiontraining.py.")
     print("Please ensure the script is in the same directory or adjust the import path.")
