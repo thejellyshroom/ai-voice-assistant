@@ -6,6 +6,16 @@ __pycache__/
 # ds store files
 .DS_Store
 ._*
+
+
+
+*.keras
+*.h5
+*.joblib
+*.pkl
+*.pickle
+*.pickle.gz
+*.pickle.bz2
 # Thumbs.db
 Thumbs.db
 # Environments
