@@ -33,7 +33,7 @@ emotions_id2label = {
     24: 'remorse',
     25: 'sadness',
     26: 'surprise',
-    27: 'neutral'  # Last entry (no comma)
+    27: 'neutral'
 }
 emotions_label2id = {v: k for k, v in emotions_id2label.items()}
 
@@ -42,34 +42,19 @@ TEST_TEXTS = [
     "This makes me really angry.",
     "I'm feeling very sad and disappointed.",
     "That's really interesting, tell me more.",
-    "I am both excited and nervous about the presentation.", # data with multiple emotions
-    # --- More Complicated Examples ---
+    "I am both excited and nervous about the presentation.",
     "My hands were shaking as I opened the letter, unsure what to expect.",
-        # Potential Emotions: nervousness, anticipation, fear, excitement?
     "After the argument, the silence in the car was deafening and heavy.",
-        # Potential Emotions: anger, sadness, tension, awkwardness (remorse?)
     "Watching the sunset reminded me of our last trip together - a bittersweet memory.",
-        # Potential Emotions: nostalgia, sadness, joy, love
     "I'm relieved the project is finally over, but also a bit anxious about what comes next.",
-        # Potential Emotions: relief, anxiety, maybe fatigue or even sadness if the project was enjoyable
-    # Sarcasm / Figurative Language
     "Oh great, another 'urgent' all-hands meeting scheduled for 5 PM on a Friday. Just perfect.",
-        # Potential Emotions: annoyance, frustration, sarcasm (model might incorrectly see 'gratitude' or 'excitement')
     "Getting a flat tire miles from anywhere on the way to the most important interview of my life was exactly the kind of luck I needed.",
-        # Potential Emotions: frustration, anger, disappointment, anxiety, sarcasm
-    # Ambiguity / Context Dependency
     "He delivered the bad news with a completely straight face, leaving us all reeling.",
-        # Potential Emotions (in the speaker/listener): confusion, fear, shock, maybe anger at his lack of reaction (neutral emotion from him)
     "Well, that certainly was an experience I won't forget anytime soon.",
-        # Potential Emotions: Can range widely depending on the implied experience - could be amusement, annoyance, disgust, awe, fear, relief etc. Very ambiguous.
-    # Complex Sentence Structure / Nuance
     "I wouldn't say I'm *thrilled* about the sudden change in plans, but I suppose I can adapt if necessary.",
-        # Potential Emotions: annoyance (masked), resignation, acceptance, disapproval
     "Despite the initial burst of optimism, realizing the sheer amount of unexpected work ahead filled me with a quiet sense of dread.",
-        # Potential Emotions: optimism (past/fading), dread, anxiety, disappointment, feeling overwhelmed
 ]
 
-# Updated function to accept necessary components as arguments
 def run_examples(classifier, predict_emotion_func, threshold, test_texts):
     for text in test_texts:
         # Use the passed-in prediction function and threshold
@@ -155,12 +140,10 @@ def generate_augmented_text(original_text, target_label_id, augmentation_pipe):
         )
         if outputs and outputs[0]['generated_text']:
             generated_full_text = outputs[0]['generated_text']
-            # Find the prompt end and take the text after it
             prompt_end_index = generated_full_text.find(prompt)
             if prompt_end_index != -1:
                 potential_augmented_text = generated_full_text[prompt_end_index + len(prompt):].strip()
 
-            # --- Start Enhanced Filtering ---
             if potential_augmented_text:
                 clean_text = re.sub(r"^[^\w\(\)]+", "", potential_augmented_text).strip()
                 if not clean_text.endswith(('.', '!', '?')):
@@ -202,7 +185,7 @@ def iterative_augment_minority_classes(
     emotions_id2label_map,
     augmentation_pipe,
     max_iterations=50,
-    target_augmentation_factor=1.5 # Aim to increase minority samples by this factor per iteration
+    target_augmentation_factor=1.5 # aim to increase minority samples by this factor per iteration
     ):
 
     print("\n--- Starting Iterative Data Augmentation ---")
@@ -241,7 +224,6 @@ def iterative_augment_minority_classes(
              samples_to_generate = max(1, samples_needed) # Ensure we generate at least one if needed
              print(f"  Targeting label {emotions_id2label_map.get(label_id)} (ID: {label_id}). Need ~{samples_needed} more. Generating up to {samples_to_generate}.")
 
-             # Find original samples containing this minority label
              candidate_indices = [
                  i for i, sample_labels in enumerate(current_train_dataset['labels'])
                  if label_id in sample_labels and current_train_dataset['text'][i] not in processed_texts_in_iter
@@ -257,7 +239,6 @@ def iterative_augment_minority_classes(
                  original_sample = current_train_dataset[idx]
                  original_text = original_sample['text']
 
-                 # Generate augmented text specifically for this minority label
                  augmented_text = generate_augmented_text(
                      original_text,
                      label_id,
@@ -287,8 +268,6 @@ def iterative_augment_minority_classes(
             )
             current_train_dataset = datasets.concatenate_datasets([current_train_dataset, augmented_dataset_chunk])
             print(f"New training dataset size: {len(current_train_dataset)}")
-    else: # This else block executes if the loop completes without break (i.e., max_iterations reached)
+    else:
         print(f"Reached maximum augmentation iterations ({max_iterations}). Stopping.")
-
-    print("--- Finished Iterative Data Augmentation ---")
     return current_train_dataset
